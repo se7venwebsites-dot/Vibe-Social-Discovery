@@ -6,13 +6,11 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface User {
-  id: number;
-  name: string;
-  age: number;
-  bio: string;
-  photoUrl: string;
-  isPremium: boolean;
+export interface UpdateUserRequest {
+  name?: string;
+  age?: number;
+  bio?: string;
+  photoUrl?: string;
   city?: string;
   interests?: string[];
 }

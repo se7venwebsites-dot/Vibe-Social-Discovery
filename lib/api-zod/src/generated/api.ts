@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * VIBE Social Discovery App API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import * as zod from "zod";
 
@@ -34,6 +34,29 @@ export const GetUsersResponseItem = zod.object({
 export const GetUsersResponse = zod.array(GetUsersResponseItem);
 
 /**
+ * @summary Register or create a new user profile
+ */
+export const RegisterUserBody = zod.object({
+  name: zod.string(),
+  age: zod.number(),
+  bio: zod.string(),
+  photoUrl: zod.string().optional(),
+  city: zod.string().optional(),
+  interests: zod.array(zod.string()).optional(),
+});
+
+export const RegisterUserResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  age: zod.number(),
+  bio: zod.string(),
+  photoUrl: zod.string(),
+  isPremium: zod.boolean(),
+  city: zod.string().optional(),
+  interests: zod.array(zod.string()).optional(),
+});
+
+/**
  * @summary Get a user by ID
  */
 export const GetUserByIdParams = zod.object({
@@ -41,6 +64,33 @@ export const GetUserByIdParams = zod.object({
 });
 
 export const GetUserByIdResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  age: zod.number(),
+  bio: zod.string(),
+  photoUrl: zod.string(),
+  isPremium: zod.boolean(),
+  city: zod.string().optional(),
+  interests: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Update user profile
+ */
+export const UpdateUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserBody = zod.object({
+  name: zod.string().optional(),
+  age: zod.number().optional(),
+  bio: zod.string().optional(),
+  photoUrl: zod.string().optional(),
+  city: zod.string().optional(),
+  interests: zod.array(zod.string()).optional(),
+});
+
+export const UpdateUserResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   age: zod.number(),
@@ -85,7 +135,88 @@ export const GetLikesReceivedResponseItem = zod.object({
 export const GetLikesReceivedResponse = zod.array(GetLikesReceivedResponseItem);
 
 /**
- * @summary Activate premium for a user (simulated purchase)
+ * @summary Get all matches for a user
+ */
+export const GetMatchesParams = zod.object({
+  userId: zod.coerce.number(),
+});
+
+export const GetMatchesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  age: zod.number(),
+  bio: zod.string(),
+  photoUrl: zod.string(),
+  isPremium: zod.boolean(),
+  city: zod.string().optional(),
+  matchId: zod.number(),
+  lastMessage: zod.string().optional(),
+  unreadCount: zod.number(),
+});
+export const GetMatchesResponse = zod.array(GetMatchesResponseItem);
+
+/**
+ * @summary Add a friend (creates like + checks for match)
+ */
+export const AddFriendBody = zod.object({
+  fromUserId: zod.number(),
+  toUserId: zod.number(),
+});
+
+export const AddFriendResponse = zod.object({
+  success: zod.boolean(),
+  isMatch: zod.boolean(),
+});
+
+/**
+ * @summary Get conversation between two users
+ */
+export const GetMessagesParams = zod.object({
+  userId: zod.coerce.number(),
+  otherId: zod.coerce.number(),
+});
+
+export const GetMessagesResponseItem = zod.object({
+  id: zod.number(),
+  senderId: zod.number(),
+  receiverId: zod.number(),
+  content: zod.string(),
+  isRead: zod.boolean(),
+  createdAt: zod.string().optional(),
+});
+export const GetMessagesResponse = zod.array(GetMessagesResponseItem);
+
+/**
+ * @summary Send a message
+ */
+export const SendMessageBody = zod.object({
+  senderId: zod.number(),
+  receiverId: zod.number(),
+  content: zod.string(),
+});
+
+export const SendMessageResponse = zod.object({
+  id: zod.number(),
+  senderId: zod.number(),
+  receiverId: zod.number(),
+  content: zod.string(),
+  isRead: zod.boolean(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary Get unread message count
+ */
+export const GetUnreadCountParams = zod.object({
+  userId: zod.coerce.number(),
+});
+
+export const GetUnreadCountResponse = zod.object({
+  count: zod.number(),
+});
+
+/**
+ * @summary Activate premium for a user
  */
 export const ActivatePremiumBody = zod.object({
   userId: zod.number(),
@@ -100,28 +231,4 @@ export const ActivatePremiumResponse = zod.object({
   isPremium: zod.boolean(),
   city: zod.string().optional(),
   interests: zod.array(zod.string()).optional(),
-});
-
-/**
- * @summary Get swipe count for current session
- */
-export const GetSwipeCountParams = zod.object({
-  userId: zod.coerce.number(),
-});
-
-export const GetSwipeCountResponse = zod.object({
-  count: zod.number(),
-  userId: zod.number(),
-});
-
-/**
- * @summary Reset swipe count after premium activation
- */
-export const ResetSwipeCountParams = zod.object({
-  userId: zod.coerce.number(),
-});
-
-export const ResetSwipeCountResponse = zod.object({
-  count: zod.number(),
-  userId: zod.number(),
 });

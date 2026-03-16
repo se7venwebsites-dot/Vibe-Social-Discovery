@@ -1,12 +1,14 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
-import React from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
+import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
+
 import Colors from "@/constants/colors";
+import { useUserContext } from "@/context/UserContext";
 
 function NativeTabLayout() {
   return (
@@ -17,7 +19,11 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="likes">
         <Icon sf={{ default: "heart", selected: "heart.fill" }} />
-        <Label>Polubienia</Label>
+        <Label>Lajki</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="messages">
+        <Icon sf={{ default: "message", selected: "message.fill" }} />
+        <Label>Wiadomości</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
@@ -41,20 +47,18 @@ function ClassicTabLayout() {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : Colors.black,
           borderTopWidth: 0,
-          borderTopColor: Colors.border,
           elevation: 0,
           ...(isWeb ? { height: 84 } : {}),
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
-              intensity={80}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
+            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
           ) : isWeb ? (
             <View
-              style={[StyleSheet.absoluteFill, { backgroundColor: Colors.black, borderTopWidth: 1, borderTopColor: Colors.border }]}
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: Colors.black, borderTopWidth: 1, borderTopColor: Colors.border },
+              ]}
             />
           ) : null,
       }}
@@ -74,12 +78,24 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="likes"
         options={{
-          title: "Polubienia",
+          title: "Lajki",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="heart.fill" tintColor={color} size={24} />
             ) : (
               <Feather name="heart" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: "Wiadomości",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="message.fill" tintColor={color} size={24} />
+            ) : (
+              <Feather name="message-circle" size={22} color={color} />
             ),
         }}
       />
@@ -100,6 +116,24 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { isRegistered, isLoadingAuth } = useUserContext();
+
+  useEffect(() => {
+    if (!isLoadingAuth && !isRegistered) {
+      router.replace("/onboarding");
+    }
+  }, [isLoadingAuth, isRegistered]);
+
+  if (isLoadingAuth) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.black, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={Colors.accent} size="large" />
+      </View>
+    );
+  }
+
+  if (!isRegistered) return null;
+
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }

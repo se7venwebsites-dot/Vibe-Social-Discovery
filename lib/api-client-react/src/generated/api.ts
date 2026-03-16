@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * VIBE Social Discovery App API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
@@ -19,10 +19,16 @@ import type {
 import type {
   ActivatePremiumRequest,
   CreateLikeRequest,
+  FriendRequest,
   GetUsersParams,
   HealthStatus,
   LikeResult,
-  SwipeCount,
+  MatchedUser,
+  Message,
+  RegisterRequest,
+  SendMessageRequest,
+  UnreadCount,
+  UpdateUserRequest,
   User,
 } from "./api.schemas";
 
@@ -205,6 +211,92 @@ export function useGetUsers<
 }
 
 /**
+ * @summary Register or create a new user profile
+ */
+export const getRegisterUserUrl = () => {
+  return `/api/users/register`;
+};
+
+export const registerUser = async (
+  registerRequest: RegisterRequest,
+  options?: RequestInit,
+): Promise<User> => {
+  return customFetch<User>(getRegisterUserUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(registerRequest),
+  });
+};
+
+export const getRegisterUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerUser>>,
+    TError,
+    { data: BodyType<RegisterRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerUser>>,
+  TError,
+  { data: BodyType<RegisterRequest> },
+  TContext
+> => {
+  const mutationKey = ["registerUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerUser>>,
+    { data: BodyType<RegisterRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return registerUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegisterUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerUser>>
+>;
+export type RegisterUserMutationBody = BodyType<RegisterRequest>;
+export type RegisterUserMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Register or create a new user profile
+ */
+export const useRegisterUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerUser>>,
+    TError,
+    { data: BodyType<RegisterRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof registerUser>>,
+  TError,
+  { data: BodyType<RegisterRequest> },
+  TContext
+> => {
+  return useMutation(getRegisterUserMutationOptions(options));
+};
+
+/**
  * @summary Get a user by ID
  */
 export const getGetUserByIdUrl = (id: number) => {
@@ -290,6 +382,93 @@ export function useGetUserById<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Update user profile
+ */
+export const getUpdateUserUrl = (id: number) => {
+  return `/api/users/${id}`;
+};
+
+export const updateUser = async (
+  id: number,
+  updateUserRequest: UpdateUserRequest,
+  options?: RequestInit,
+): Promise<User> => {
+  return customFetch<User>(getUpdateUserUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateUserRequest),
+  });
+};
+
+export const getUpdateUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUser>>,
+    TError,
+    { id: number; data: BodyType<UpdateUserRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateUser>>,
+  TError,
+  { id: number; data: BodyType<UpdateUserRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateUser>>,
+    { id: number; data: BodyType<UpdateUserRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateUser(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateUser>>
+>;
+export type UpdateUserMutationBody = BodyType<UpdateUserRequest>;
+export type UpdateUserMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update user profile
+ */
+export const useUpdateUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUser>>,
+    TError,
+    { id: number; data: BodyType<UpdateUserRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateUser>>,
+  TError,
+  { id: number; data: BodyType<UpdateUserRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateUserMutationOptions(options));
+};
 
 /**
  * @summary Like or dislike a user
@@ -466,7 +645,444 @@ export function useGetLikesReceived<
 }
 
 /**
- * @summary Activate premium for a user (simulated purchase)
+ * @summary Get all matches for a user
+ */
+export const getGetMatchesUrl = (userId: number) => {
+  return `/api/matches/${userId}`;
+};
+
+export const getMatches = async (
+  userId: number,
+  options?: RequestInit,
+): Promise<MatchedUser[]> => {
+  return customFetch<MatchedUser[]>(getGetMatchesUrl(userId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMatchesQueryKey = (userId: number) => {
+  return [`/api/matches/${userId}`] as const;
+};
+
+export const getGetMatchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMatches>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMatches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMatchesQueryKey(userId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMatches>>> = ({
+    signal,
+  }) => getMatches(userId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!userId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMatches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMatchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMatches>>
+>;
+export type GetMatchesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all matches for a user
+ */
+
+export function useGetMatches<
+  TData = Awaited<ReturnType<typeof getMatches>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMatches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMatchesQueryOptions(userId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a friend (creates like + checks for match)
+ */
+export const getAddFriendUrl = () => {
+  return `/api/matches/friend`;
+};
+
+export const addFriend = async (
+  friendRequest: FriendRequest,
+  options?: RequestInit,
+): Promise<LikeResult> => {
+  return customFetch<LikeResult>(getAddFriendUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(friendRequest),
+  });
+};
+
+export const getAddFriendMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addFriend>>,
+    TError,
+    { data: BodyType<FriendRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addFriend>>,
+  TError,
+  { data: BodyType<FriendRequest> },
+  TContext
+> => {
+  const mutationKey = ["addFriend"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addFriend>>,
+    { data: BodyType<FriendRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return addFriend(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddFriendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addFriend>>
+>;
+export type AddFriendMutationBody = BodyType<FriendRequest>;
+export type AddFriendMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a friend (creates like + checks for match)
+ */
+export const useAddFriend = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addFriend>>,
+    TError,
+    { data: BodyType<FriendRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addFriend>>,
+  TError,
+  { data: BodyType<FriendRequest> },
+  TContext
+> => {
+  return useMutation(getAddFriendMutationOptions(options));
+};
+
+/**
+ * @summary Get conversation between two users
+ */
+export const getGetMessagesUrl = (userId: number, otherId: number) => {
+  return `/api/messages/${userId}/${otherId}`;
+};
+
+export const getMessages = async (
+  userId: number,
+  otherId: number,
+  options?: RequestInit,
+): Promise<Message[]> => {
+  return customFetch<Message[]>(getGetMessagesUrl(userId, otherId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMessagesQueryKey = (userId: number, otherId: number) => {
+  return [`/api/messages/${userId}/${otherId}`] as const;
+};
+
+export const getGetMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  otherId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMessagesQueryKey(userId, otherId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMessages>>> = ({
+    signal,
+  }) => getMessages(userId, otherId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(userId && otherId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMessages>>
+>;
+export type GetMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get conversation between two users
+ */
+
+export function useGetMessages<
+  TData = Awaited<ReturnType<typeof getMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  otherId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMessagesQueryOptions(userId, otherId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Send a message
+ */
+export const getSendMessageUrl = () => {
+  return `/api/messages`;
+};
+
+export const sendMessage = async (
+  sendMessageRequest: SendMessageRequest,
+  options?: RequestInit,
+): Promise<Message> => {
+  return customFetch<Message>(getSendMessageUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendMessageRequest),
+  });
+};
+
+export const getSendMessageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendMessage>>,
+    TError,
+    { data: BodyType<SendMessageRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendMessage>>,
+  TError,
+  { data: BodyType<SendMessageRequest> },
+  TContext
+> => {
+  const mutationKey = ["sendMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendMessage>>,
+    { data: BodyType<SendMessageRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendMessage(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendMessage>>
+>;
+export type SendMessageMutationBody = BodyType<SendMessageRequest>;
+export type SendMessageMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a message
+ */
+export const useSendMessage = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendMessage>>,
+    TError,
+    { data: BodyType<SendMessageRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendMessage>>,
+  TError,
+  { data: BodyType<SendMessageRequest> },
+  TContext
+> => {
+  return useMutation(getSendMessageMutationOptions(options));
+};
+
+/**
+ * @summary Get unread message count
+ */
+export const getGetUnreadCountUrl = (userId: number) => {
+  return `/api/messages/unread/${userId}`;
+};
+
+export const getUnreadCount = async (
+  userId: number,
+  options?: RequestInit,
+): Promise<UnreadCount> => {
+  return customFetch<UnreadCount>(getGetUnreadCountUrl(userId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetUnreadCountQueryKey = (userId: number) => {
+  return [`/api/messages/unread/${userId}`] as const;
+};
+
+export const getGetUnreadCountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getUnreadCount>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUnreadCount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetUnreadCountQueryKey(userId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getUnreadCount>>> = ({
+    signal,
+  }) => getUnreadCount(userId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!userId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getUnreadCount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetUnreadCountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getUnreadCount>>
+>;
+export type GetUnreadCountQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get unread message count
+ */
+
+export function useGetUnreadCount<
+  TData = Awaited<ReturnType<typeof getUnreadCount>>,
+  TError = ErrorType<unknown>,
+>(
+  userId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUnreadCount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUnreadCountQueryOptions(userId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Activate premium for a user
  */
 export const getActivatePremiumUrl = () => {
   return `/api/premium/activate`;
@@ -529,7 +1145,7 @@ export type ActivatePremiumMutationBody = BodyType<ActivatePremiumRequest>;
 export type ActivatePremiumMutationError = ErrorType<unknown>;
 
 /**
- * @summary Activate premium for a user (simulated purchase)
+ * @summary Activate premium for a user
  */
 export const useActivatePremium = <
   TError = ErrorType<unknown>,
@@ -549,175 +1165,4 @@ export const useActivatePremium = <
   TContext
 > => {
   return useMutation(getActivatePremiumMutationOptions(options));
-};
-
-/**
- * @summary Get swipe count for current session
- */
-export const getGetSwipeCountUrl = (userId: number) => {
-  return `/api/swipes/count/${userId}`;
-};
-
-export const getSwipeCount = async (
-  userId: number,
-  options?: RequestInit,
-): Promise<SwipeCount> => {
-  return customFetch<SwipeCount>(getGetSwipeCountUrl(userId), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetSwipeCountQueryKey = (userId: number) => {
-  return [`/api/swipes/count/${userId}`] as const;
-};
-
-export const getGetSwipeCountQueryOptions = <
-  TData = Awaited<ReturnType<typeof getSwipeCount>>,
-  TError = ErrorType<unknown>,
->(
-  userId: number,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getSwipeCount>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetSwipeCountQueryKey(userId);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSwipeCount>>> = ({
-    signal,
-  }) => getSwipeCount(userId, { signal, ...requestOptions });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!userId,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof getSwipeCount>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetSwipeCountQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getSwipeCount>>
->;
-export type GetSwipeCountQueryError = ErrorType<unknown>;
-
-/**
- * @summary Get swipe count for current session
- */
-
-export function useGetSwipeCount<
-  TData = Awaited<ReturnType<typeof getSwipeCount>>,
-  TError = ErrorType<unknown>,
->(
-  userId: number,
-  options?: {
-    query?: UseQueryOptions<
-      Awaited<ReturnType<typeof getSwipeCount>>,
-      TError,
-      TData
-    >;
-    request?: SecondParameter<typeof customFetch>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetSwipeCountQueryOptions(userId, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * @summary Reset swipe count after premium activation
- */
-export const getResetSwipeCountUrl = (userId: number) => {
-  return `/api/swipes/reset/${userId}`;
-};
-
-export const resetSwipeCount = async (
-  userId: number,
-  options?: RequestInit,
-): Promise<SwipeCount> => {
-  return customFetch<SwipeCount>(getResetSwipeCountUrl(userId), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const getResetSwipeCountMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof resetSwipeCount>>,
-    TError,
-    { userId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof resetSwipeCount>>,
-  TError,
-  { userId: number },
-  TContext
-> => {
-  const mutationKey = ["resetSwipeCount"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof resetSwipeCount>>,
-    { userId: number }
-  > = (props) => {
-    const { userId } = props ?? {};
-
-    return resetSwipeCount(userId, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ResetSwipeCountMutationResult = NonNullable<
-  Awaited<ReturnType<typeof resetSwipeCount>>
->;
-
-export type ResetSwipeCountMutationError = ErrorType<unknown>;
-
-/**
- * @summary Reset swipe count after premium activation
- */
-export const useResetSwipeCount = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof resetSwipeCount>>,
-    TError,
-    { userId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof resetSwipeCount>>,
-  TError,
-  { userId: number },
-  TContext
-> => {
-  return useMutation(getResetSwipeCountMutationOptions(options));
 };

@@ -3,14 +3,20 @@
  * Do not edit manually.
  * Api
  * VIBE Social Discovery App API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 
 export * from "./activatePremiumRequest";
 export * from "./createLikeRequest";
 export * from "./createLikeRequestAction";
+export * from "./friendRequest";
 export * from "./getUsersParams";
 export * from "./healthStatus";
 export * from "./likeResult";
-export * from "./swipeCount";
+export * from "./matchedUser";
+export * from "./message";
+export * from "./registerRequest";
+export * from "./sendMessageRequest";
+export * from "./unreadCount";
+export * from "./updateUserRequest";
 export * from "./user";

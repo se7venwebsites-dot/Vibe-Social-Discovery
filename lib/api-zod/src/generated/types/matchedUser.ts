@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface User {
+export interface MatchedUser {
   id: number;
   name: string;
   age: number;
@@ -14,5 +14,7 @@ export interface User {
   photoUrl: string;
   isPremium: boolean;
   city?: string;
-  interests?: string[];
+  matchId: number;
+  lastMessage?: string;
+  unreadCount: number;
 }

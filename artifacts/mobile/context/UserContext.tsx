@@ -1,83 +1,132 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
 
-const CURRENT_USER_ID_KEY = "vibe_current_user_id";
-const SWIPE_COUNT_KEY = "vibe_swipe_count";
+const USER_ID_KEY = "vibe_user_id";
 const IS_PREMIUM_KEY = "vibe_is_premium";
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
+
+export const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
   : "/api";
 
-interface UserContextType {
-  currentUserId: number;
-  swipeCount: number;
+export interface UserProfile {
+  id: number;
+  name: string;
+  age: number;
+  bio: string;
+  photoUrl: string;
   isPremium: boolean;
-  incrementSwipe: () => void;
+  city?: string;
+  interests?: string[];
+}
+
+interface UserContextType {
+  currentUser: UserProfile | null;
+  isRegistered: boolean;
+  isLoadingAuth: boolean;
+  isPremium: boolean;
+  register: (data: Omit<UserProfile, "id" | "isPremium">) => Promise<void>;
+  updateProfile: (data: Partial<Omit<UserProfile, "id" | "isPremium">>) => Promise<void>;
   activatePremium: () => Promise<void>;
-  resetSwipes: () => void;
+  devReset: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | null>(null);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [currentUserId] = useState<number>(1);
-  const [swipeCount, setSwipeCount] = useState<number>(0);
-  const [isPremium, setIsPremium] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const sc = await AsyncStorage.getItem(SWIPE_COUNT_KEY);
-        const premium = await AsyncStorage.getItem(IS_PREMIUM_KEY);
-        if (sc) setSwipeCount(parseInt(sc));
-        if (premium === "true") setIsPremium(true);
+        const storedId = await AsyncStorage.getItem(USER_ID_KEY);
+        const storedPremium = await AsyncStorage.getItem(IS_PREMIUM_KEY);
+        if (storedId) {
+          const res = await fetch(`${BASE_URL}/users/${storedId}`);
+          if (res.ok) {
+            const user: UserProfile = await res.json();
+            setCurrentUser(user);
+            setIsPremium(user.isPremium || storedPremium === "true");
+          } else {
+            await AsyncStorage.removeItem(USER_ID_KEY);
+          }
+        }
       } catch {}
+      setIsLoadingAuth(false);
     };
     load();
   }, []);
 
-  const incrementSwipe = () => {
-    if (isPremium) return;
-    const next = swipeCount + 1;
-    setSwipeCount(next);
-    AsyncStorage.setItem(SWIPE_COUNT_KEY, String(next));
-  };
+  const register = useCallback(async (data: Omit<UserProfile, "id" | "isPremium">) => {
+    const res = await fetch(`${BASE_URL}/users/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Registration failed");
+    const user: UserProfile = await res.json();
+    setCurrentUser(user);
+    setIsPremium(false);
+    await AsyncStorage.setItem(USER_ID_KEY, String(user.id));
+    await AsyncStorage.removeItem(IS_PREMIUM_KEY);
+  }, []);
 
-  const activatePremium = async () => {
+  const updateProfile = useCallback(async (data: Partial<Omit<UserProfile, "id" | "isPremium">>) => {
+    if (!currentUser) return;
+    const res = await fetch(`${BASE_URL}/users/${currentUser.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Update failed");
+    const updated: UserProfile = await res.json();
+    setCurrentUser(updated);
+  }, [currentUser]);
+
+  const activatePremium = useCallback(async () => {
+    if (!currentUser) return;
     try {
       const res = await fetch(`${BASE_URL}/premium/activate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: currentUserId }),
+        body: JSON.stringify({ userId: currentUser.id }),
       });
       if (res.ok) {
-        setIsPremium(true);
-        setSwipeCount(0);
-        await AsyncStorage.setItem(IS_PREMIUM_KEY, "true");
-        await AsyncStorage.setItem(SWIPE_COUNT_KEY, "0");
+        const updated: UserProfile = await res.json();
+        setCurrentUser(updated);
       }
-    } catch (e) {
-      setIsPremium(true);
-      setSwipeCount(0);
-      await AsyncStorage.setItem(IS_PREMIUM_KEY, "true");
-      await AsyncStorage.setItem(SWIPE_COUNT_KEY, "0");
-    }
-  };
+    } catch {}
+    setIsPremium(true);
+    setCurrentUser((u) => u ? { ...u, isPremium: true } : u);
+    await AsyncStorage.setItem(IS_PREMIUM_KEY, "true");
+  }, [currentUser]);
 
-  const resetSwipes = () => {
-    setSwipeCount(0);
-    AsyncStorage.setItem(SWIPE_COUNT_KEY, "0");
-  };
+  const devReset = useCallback(async () => {
+    await AsyncStorage.multiRemove([USER_ID_KEY, IS_PREMIUM_KEY]);
+    setCurrentUser(null);
+    setIsPremium(false);
+  }, []);
 
   return (
     <UserContext.Provider
-      value={{ currentUserId, swipeCount, isPremium, incrementSwipe, activatePremium, resetSwipes }}
+      value={{
+        currentUser,
+        isRegistered: !!currentUser,
+        isLoadingAuth,
+        isPremium,
+        register,
+        updateProfile,
+        activatePremium,
+        devReset,
+      }}
     >
       {children}
     </UserContext.Provider>

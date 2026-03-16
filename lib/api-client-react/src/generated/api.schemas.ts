@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * VIBE Social Discovery App API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 export interface HealthStatus {
   status: string;
@@ -16,6 +16,37 @@ export interface User {
   bio: string;
   photoUrl: string;
   isPremium: boolean;
+  city?: string;
+  interests?: string[];
+}
+
+export interface MatchedUser {
+  id: number;
+  name: string;
+  age: number;
+  bio: string;
+  photoUrl: string;
+  isPremium: boolean;
+  city?: string;
+  matchId: number;
+  lastMessage?: string;
+  unreadCount: number;
+}
+
+export interface RegisterRequest {
+  name: string;
+  age: number;
+  bio: string;
+  photoUrl?: string;
+  city?: string;
+  interests?: string[];
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  age?: number;
+  bio?: string;
+  photoUrl?: string;
   city?: string;
   interests?: string[];
 }
@@ -39,12 +70,31 @@ export interface LikeResult {
   isMatch: boolean;
 }
 
-export interface ActivatePremiumRequest {
-  userId: number;
+export interface FriendRequest {
+  fromUserId: number;
+  toUserId: number;
 }
 
-export interface SwipeCount {
+export interface SendMessageRequest {
+  senderId: number;
+  receiverId: number;
+  content: string;
+}
+
+export interface Message {
+  id: number;
+  senderId: number;
+  receiverId: number;
+  content: string;
+  isRead: boolean;
+  createdAt?: string;
+}
+
+export interface UnreadCount {
   count: number;
+}
+
+export interface ActivatePremiumRequest {
   userId: number;
 }
 

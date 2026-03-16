@@ -8,6 +8,7 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -16,12 +17,8 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
-import { useUserContext } from "@/context/UserContext";
+import { useUserContext, BASE_URL } from "@/context/UserContext";
 import { PremiumModal } from "@/components/PremiumModal";
-
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
-  : "/api";
 
 interface User {
   id: number;
@@ -29,30 +26,37 @@ interface User {
   age: number;
   bio: string;
   photoUrl: string;
-  isPremium: boolean;
   city?: string;
 }
 
-function BlurredCard() {
+function BlurCard() {
   return (
     <View style={styles.blurCard}>
-      <View style={styles.blurImagePlaceholder} />
-      <View style={styles.blurContent}>
+      <View style={styles.blurImg} />
+      <View style={styles.blurOverlay}>
         <View style={styles.blurLine} />
-        <View style={[styles.blurLine, { width: "60%" }]} />
+        <View style={[styles.blurLine, { width: "55%" }]} />
       </View>
     </View>
   );
 }
 
-function LikeCard({ user, index }: { user: User; index: number }) {
+function LikeCard({
+  user,
+  index,
+  onPress,
+}: {
+  user: User;
+  index: number;
+  onPress: (user: User) => void;
+}) {
   return (
     <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
-      <View style={styles.likeCard}>
-        <Image source={{ uri: user.photoUrl }} style={styles.likeCardImage} />
-        <View style={styles.likeCardOverlay} />
-        <View style={styles.likeCardInfo}>
-          <Text style={styles.likeCardName}>{user.name}, {user.age}</Text>
+      <Pressable style={styles.likeCard} onPress={() => onPress(user)}>
+        <Image source={{ uri: user.photoUrl }} style={styles.likeImg} resizeMode="cover" />
+        <View style={styles.likeOverlay} />
+        <View style={styles.likeInfo}>
+          <Text style={styles.likeName}>{user.name}, {user.age}</Text>
           {user.city ? (
             <View style={styles.locationRow}>
               <Feather name="map-pin" size={10} color={Colors.textSecondary} />
@@ -63,69 +67,127 @@ function LikeCard({ user, index }: { user: User; index: number }) {
         <View style={styles.heartBadge}>
           <Feather name="heart" size={14} color={Colors.black} />
         </View>
-      </View>
+      </Pressable>
     </Animated.View>
+  );
+}
+
+function LikePaywallModal({ visible, user, onClose, onActivate }: {
+  visible: boolean;
+  user: User | null;
+  onClose: () => void;
+  onActivate: () => Promise<void>;
+}) {
+  const [loading, setLoading] = React.useState(false);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.paywallOverlay}>
+        <Animated.View entering={FadeIn.duration(200)} style={styles.paywallBox}>
+          <Pressable style={styles.paywallClose} onPress={onClose}>
+            <Feather name="x" size={20} color={Colors.textSecondary} />
+          </Pressable>
+          <View style={styles.paywallLockCircle}>
+            <Feather name="lock" size={28} color={Colors.black} />
+          </View>
+          <Text style={styles.paywallTitle}>
+            {user?.name ?? "Ona"} już tu jest!
+          </Text>
+          <Text style={styles.paywallSub}>
+            Odblokuj listę lajków i odpowiedz {user?.name ?? "jej"} już teraz.
+          </Text>
+          <View style={styles.paywallPriceRow}>
+            <Text style={styles.paywallPrice}>24,99 PLN</Text>
+            <Text style={styles.paywallPriceSub}> / tydzień</Text>
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.paywallBtn, pressed && { opacity: 0.85 }]}
+            onPress={async () => { setLoading(true); await onActivate(); setLoading(false); }}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.black} />
+            ) : (
+              <>
+                <Feather name="zap" size={16} color={Colors.black} />
+                <Text style={styles.paywallBtnText}>Odblokuj VIBE+</Text>
+              </>
+            )}
+          </Pressable>
+          <Text style={styles.paywallNote}>Zakup jest symulowany.</Text>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
 export default function LikesScreen() {
   const insets = useSafeAreaInsets();
-  const { currentUserId, isPremium, activatePremium } = useUserContext();
+  const { currentUser, isPremium, activatePremium } = useUserContext();
   const [showPremium, setShowPremium] = React.useState(false);
-
+  const [selectedUser, setSelectedUser] = React.useState<User | null>(null);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
   const { data: likers = [], isLoading } = useQuery<User[]>({
-    queryKey: ["likes-received", currentUserId],
+    queryKey: ["likes-received", currentUser?.id],
     queryFn: async () => {
-      const res = await fetch(`${BASE_URL}/likes/received/${currentUserId}`);
+      if (!currentUser) return [];
+      const res = await fetch(`${BASE_URL}/likes/received/${currentUser.id}`);
       return res.json();
     },
-    enabled: isPremium,
+    enabled: isPremium && !!currentUser,
   });
 
-  const FAKE_COUNT = 7;
+  const FAKE_COUNT = 8;
+
+  const handleCardPress = (user: User) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedUser(user);
+    setShowPremium(true);
+  };
 
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Polubienia</Text>
-        {isPremium ? (
+        <Text style={styles.title}>Polubili Cię</Text>
+        {isPremium && (
           <View style={styles.premiumTag}>
             <Feather name="zap" size={11} color={Colors.black} />
             <Text style={styles.premiumTagText}>VIBE+</Text>
           </View>
-        ) : null}
+        )}
       </View>
 
       {!isPremium ? (
         <View style={styles.lockedContainer}>
           <View style={styles.blurGrid}>
             {Array.from({ length: FAKE_COUNT }).map((_, i) => (
-              <BlurredCard key={i} />
+              <Pressable key={i} style={styles.blurCardWrap} onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSelectedUser(null);
+                setShowPremium(true);
+              }}>
+                <BlurCard />
+                <View style={styles.blurLockOverlay}>
+                  <Feather name="lock" size={18} color="rgba(255,255,255,0.6)" />
+                </View>
+              </Pressable>
             ))}
           </View>
-          <View style={styles.lockedOverlay}>
+          <View style={styles.lockedBanner}>
             <Animated.View entering={FadeIn.delay(200)} style={styles.lockedBox}>
-              <View style={styles.lockIconWrapper}>
-                <Feather name="lock" size={28} color={Colors.black} />
+              <View style={styles.lockIconWrap}>
+                <Feather name="lock" size={26} color={Colors.black} />
               </View>
-              <Text style={styles.lockTitle}>Kto Cię polubił?</Text>
-              <Text style={styles.lockSubtitle}>
-                Odblokuj VIBE+, aby zobaczyć {FAKE_COUNT}+ profili, które Cię polubiły.
+              <Text style={styles.lockTitle}>{FAKE_COUNT}+ osób Cię polubiło</Text>
+              <Text style={styles.lockSub}>
+                Odblokuj VIBE+, aby zobaczyć kto dał Ci lajka i z nimi pogadać.
               </Text>
               <Pressable
-                style={({ pressed }) => [
-                  styles.unlockBtn,
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                ]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setShowPremium(true);
-                }}
+                style={({ pressed }) => [styles.unlockBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowPremium(true); }}
               >
                 <Feather name="zap" size={16} color={Colors.black} />
-                <Text style={styles.unlockBtnText}>Odblokuj VIBE+</Text>
+                <Text style={styles.unlockBtnText}>Odblokuj za 24,99 PLN/tydz.</Text>
               </Pressable>
             </Animated.View>
           </View>
@@ -148,18 +210,31 @@ export default function LikesScreen() {
           columnWrapperStyle={styles.row}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 90 }]}
           renderItem={({ item, index }) => (
-            <LikeCard user={item} index={index} />
+            <LikeCard user={item} index={index} onPress={() => {}} />
           )}
           showsVerticalScrollIndicator={false}
         />
       )}
 
       <PremiumModal
-        visible={showPremium}
-        onClose={() => setShowPremium(false)}
+        visible={!isPremium && showPremium && !selectedUser}
+        onClose={() => { setShowPremium(false); setSelectedUser(null); }}
         onActivate={async () => {
           await activatePremium();
           setShowPremium(false);
+          setSelectedUser(null);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+
+      <LikePaywallModal
+        visible={showPremium && !!selectedUser && !isPremium}
+        user={selectedUser}
+        onClose={() => { setShowPremium(false); setSelectedUser(null); }}
+        onActivate={async () => {
+          await activatePremium();
+          setShowPremium(false);
+          setSelectedUser(null);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
@@ -168,10 +243,7 @@ export default function LikesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.black,
-  },
+  container: { flex: 1, backgroundColor: Colors.black },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -180,11 +252,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingTop: 8,
   },
-  title: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 26,
-    color: Colors.textPrimary,
-  },
+  title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
   premiumTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -194,178 +262,109 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
   },
-  premiumTagText: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 11,
-    color: Colors.black,
-  },
-  lockedContainer: {
-    flex: 1,
-    position: "relative",
-  },
-  blurGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    padding: 8,
-    gap: 8,
-  },
-  blurCard: {
-    width: "47%",
-    height: 200,
-    borderRadius: 16,
-    overflow: "hidden",
-    backgroundColor: Colors.cardBg,
-  },
-  blurImagePlaceholder: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    opacity: 0.4,
-  },
-  blurContent: {
-    padding: 10,
-    gap: 6,
-  },
-  blurLine: {
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.border,
-    width: "80%",
-  },
-  lockedOverlay: {
+  premiumTagText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
+  lockedContainer: { flex: 1 },
+  blurGrid: { flexDirection: "row", flexWrap: "wrap", padding: 8, gap: 8 },
+  blurCardWrap: { width: "47%", position: "relative" },
+  blurCard: { height: 200, borderRadius: 16, overflow: "hidden", backgroundColor: Colors.cardBg },
+  blurImg: { flex: 1, backgroundColor: Colors.surface, opacity: 0.3 },
+  blurOverlay: { padding: 10, gap: 6 },
+  blurLine: { height: 10, borderRadius: 5, backgroundColor: Colors.border, width: "80%" },
+  blurLockOverlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  lockedBanner: {
+    position: "absolute",
+    bottom: 80, left: 0, right: 0,
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
   lockedBox: {
     backgroundColor: Colors.cardBg,
     borderRadius: 24,
-    padding: 28,
+    padding: 24,
     alignItems: "center",
-    marginHorizontal: 24,
     borderWidth: 1,
     borderColor: Colors.border,
-    gap: 12,
+    gap: 10,
+    width: "100%",
   },
-  lockIconWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  lockIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: Colors.accent,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
   },
-  lockTitle: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 22,
-    color: Colors.textPrimary,
-    textAlign: "center",
-  },
-  lockSubtitle: {
-    fontFamily: "Montserrat_400Regular",
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-  },
+  lockTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary, textAlign: "center" },
+  lockSub: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 19 },
   unlockBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     backgroundColor: Colors.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
     borderRadius: 12,
     marginTop: 4,
   },
-  unlockBtnText: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 15,
-    color: Colors.black,
-  },
-  row: {
-    gap: 12,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  listContent: {
-    paddingTop: 8,
-    paddingHorizontal: 4,
-  },
-  likeCard: {
-    flex: 1,
-    height: 220,
-    borderRadius: 16,
-    overflow: "hidden",
-    backgroundColor: Colors.cardBg,
-    position: "relative",
-  },
-  likeCardImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  likeCardOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: "45%",
-    backgroundColor: "rgba(0,0,0,0.7)",
-  },
-  likeCardInfo: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 12,
-  },
-  likeCardName: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    marginTop: 2,
-  },
-  locationText: {
-    fontFamily: "Montserrat_400Regular",
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
+  unlockBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.black },
+  row: { gap: 12, paddingHorizontal: 12, marginBottom: 12 },
+  listContent: { paddingTop: 8, paddingHorizontal: 4 },
+  likeCard: { flex: 1, height: 220, borderRadius: 16, overflow: "hidden", backgroundColor: Colors.cardBg },
+  likeImg: { width: "100%", height: "100%" },
+  likeOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, height: "45%", backgroundColor: "rgba(0,0,0,0.7)" },
+  likeInfo: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 12 },
+  likeName: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.textPrimary },
+  locationRow: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 },
+  locationText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textSecondary },
   heartBadge: {
     position: "absolute",
-    top: 10,
-    right: 10,
-    width: 30,
-    height: 30,
+    top: 10, right: 10,
+    width: 30, height: 30,
     borderRadius: 15,
     backgroundColor: Colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
+  emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary },
+  paywallOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
+  paywallBox: {
+    backgroundColor: Colors.cardBg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 28,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
     gap: 12,
+    alignItems: "center",
   },
-  emptyTitle: {
-    fontFamily: "Montserrat_700Bold",
-    fontSize: 20,
-    color: Colors.textPrimary,
+  paywallClose: { position: "absolute", top: 16, right: 20, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  paywallLockCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  paywallTitle: { fontFamily: "Montserrat_700Bold", fontSize: 22, color: Colors.textPrimary, textAlign: "center" },
+  paywallSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  paywallPriceRow: { flexDirection: "row", alignItems: "baseline" },
+  paywallPrice: { fontFamily: "Montserrat_700Bold", fontSize: 36, color: Colors.accent },
+  paywallPriceSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary },
+  paywallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 14,
+    marginTop: 4,
   },
-  emptyText: {
-    fontFamily: "Montserrat_400Regular",
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
+  paywallBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
+  paywallNote: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted, textAlign: "center" },
 });

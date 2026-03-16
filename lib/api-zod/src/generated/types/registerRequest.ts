@@ -6,13 +6,11 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface User {
-  id: number;
+export interface RegisterRequest {
   name: string;
   age: number;
   bio: string;
-  photoUrl: string;
-  isPremium: boolean;
+  photoUrl?: string;
   city?: string;
   interests?: string[];
 }

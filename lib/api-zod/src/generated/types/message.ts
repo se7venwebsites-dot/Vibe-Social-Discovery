@@ -6,13 +6,11 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface User {
+export interface Message {
   id: number;
-  name: string;
-  age: number;
-  bio: string;
-  photoUrl: string;
-  isPremium: boolean;
-  city?: string;
-  interests?: string[];
+  senderId: number;
+  receiverId: number;
+  content: string;
+  isRead: boolean;
+  createdAt?: string;
 }

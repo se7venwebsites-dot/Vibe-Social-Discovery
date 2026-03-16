@@ -3,10 +3,9 @@
  * Do not edit manually.
  * Api
  * VIBE Social Discovery App API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 
-export interface SwipeCount {
+export interface UnreadCount {
   count: number;
-  userId: number;
 }

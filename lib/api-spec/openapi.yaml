@@ -1,20 +1,18 @@
 openapi: 3.1.0
 info:
   title: Api
-  version: 0.1.0
+  version: 0.2.0
   description: VIBE Social Discovery App API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: users
-    description: User operations
   - name: likes
-    description: Like operations
+  - name: matches
+  - name: messages
   - name: premium
-    description: Premium operations
 paths:
   /healthz:
     get:
@@ -50,6 +48,25 @@ paths:
                 items:
                   $ref: "#/components/schemas/User"
 
+  /users/register:
+    post:
+      operationId: registerUser
+      tags: [users]
+      summary: Register or create a new user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
   /users/{id}:
     get:
       operationId: getUserById
@@ -64,6 +81,29 @@ paths:
       responses:
         "200":
           description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
           content:
             application/json:
               schema:
@@ -109,11 +149,115 @@ paths:
                 items:
                   $ref: "#/components/schemas/User"
 
+  /matches/{userId}:
+    get:
+      operationId: getMatches
+      tags: [matches]
+      summary: Get all matches for a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of matched users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchedUser"
+
+  /matches/friend:
+    post:
+      operationId: addFriend
+      tags: [matches]
+      summary: Add a friend (creates like + checks for match)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FriendRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeResult"
+
+  /messages/{userId}/{otherId}:
+    get:
+      operationId: getMessages
+      tags: [messages]
+      summary: Get conversation between two users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: otherId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+
+  /messages:
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /messages/unread/{userId}:
+    get:
+      operationId: getUnreadCount
+      tags: [messages]
+      summary: Get unread message count
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnreadCount"
+
   /premium/activate:
     post:
       operationId: activatePremium
       tags: [premium]
-      summary: Activate premium for a user (simulated purchase)
+      summary: Activate premium for a user
       requestBody:
         required: true
         content:
@@ -128,44 +272,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/User"
 
-  /swipes/count/{userId}:
-    get:
-      operationId: getSwipeCount
-      tags: [users]
-      summary: Get swipe count for current session
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Swipe count
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SwipeCount"
-
-  /swipes/reset/{userId}:
-    post:
-      operationId: resetSwipeCount
-      tags: [users]
-      summary: Reset swipe count after premium activation
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Swipe count reset
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SwipeCount"
-
 components:
   schemas:
     HealthStatus:
@@ -173,8 +279,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
     User:
       type: object
@@ -197,13 +302,69 @@ components:
           type: array
           items:
             type: string
-      required:
-        - id
-        - name
-        - age
-        - bio
-        - photoUrl
-        - isPremium
+      required: [id, name, age, bio, photoUrl, isPremium]
+
+    MatchedUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        age:
+          type: integer
+        bio:
+          type: string
+        photoUrl:
+          type: string
+        isPremium:
+          type: boolean
+        city:
+          type: string
+        matchId:
+          type: integer
+        lastMessage:
+          type: string
+        unreadCount:
+          type: integer
+      required: [id, name, age, bio, photoUrl, isPremium, matchId, unreadCount]
+
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        bio:
+          type: string
+        photoUrl:
+          type: string
+        city:
+          type: string
+        interests:
+          type: array
+          items:
+            type: string
+      required: [name, age, bio]
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        bio:
+          type: string
+        photoUrl:
+          type: string
+        city:
+          type: string
+        interests:
+          type: array
+          items:
+            type: string
 
     CreateLikeRequest:
       type: object
@@ -215,10 +376,7 @@ components:
         action:
           type: string
           enum: [like, dislike]
-      required:
-        - fromUserId
-        - toUserId
-        - action
+      required: [fromUserId, toUserId, action]
 
     LikeResult:
       type: object
@@ -227,25 +385,55 @@ components:
           type: boolean
         isMatch:
           type: boolean
-      required:
-        - success
-        - isMatch
+      required: [success, isMatch]
+
+    FriendRequest:
+      type: object
+      properties:
+        fromUserId:
+          type: integer
+        toUserId:
+          type: integer
+      required: [fromUserId, toUserId]
+
+    SendMessageRequest:
+      type: object
+      properties:
+        senderId:
+          type: integer
+        receiverId:
+          type: integer
+        content:
+          type: string
+      required: [senderId, receiverId, content]
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        senderId:
+          type: integer
+        receiverId:
+          type: integer
+        content:
+          type: string
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, senderId, receiverId, content, isRead]
+
+    UnreadCount:
+      type: object
+      properties:
+        count:
+          type: integer
+      required: [count]
 
     ActivatePremiumRequest:
       type: object
       properties:
         userId:
           type: integer
-      required:
-        - userId
-
-    SwipeCount:
-      type: object
-      properties:
-        count:
-          type: integer
-        userId:
-          type: integer
-      required:
-        - count
-        - userId
+      required: [userId]
