@@ -1,22 +1,26 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: VIBE Social Discovery App API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User operations
+  - name: likes
+    description: Like operations
+  - name: premium
+    description: Premium operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +28,144 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: Get users to swipe on
+      parameters:
+        - name: currentUserId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUserById
+      tags: [users]
+      summary: Get a user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /likes:
+    post:
+      operationId: createLike
+      tags: [likes]
+      summary: Like or dislike a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLikeRequest"
+      responses:
+        "200":
+          description: Like recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeResult"
+
+  /likes/received/{userId}:
+    get:
+      operationId: getLikesReceived
+      tags: [likes]
+      summary: Get users who liked this user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of users who liked this user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /premium/activate:
+    post:
+      operationId: activatePremium
+      tags: [premium]
+      summary: Activate premium for a user (simulated purchase)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivatePremiumRequest"
+      responses:
+        "200":
+          description: Premium activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /swipes/count/{userId}:
+    get:
+      operationId: getSwipeCount
+      tags: [users]
+      summary: Get swipe count for current session
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Swipe count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwipeCount"
+
+  /swipes/reset/{userId}:
+    post:
+      operationId: resetSwipeCount
+      tags: [users]
+      summary: Reset swipe count after premium activation
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Swipe count reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwipeCount"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +176,76 @@ components:
       required:
         - status
 
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        age:
+          type: integer
+        bio:
+          type: string
+        photoUrl:
+          type: string
+        isPremium:
+          type: boolean
+        city:
+          type: string
+        interests:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - name
+        - age
+        - bio
+        - photoUrl
+        - isPremium
+
+    CreateLikeRequest:
+      type: object
+      properties:
+        fromUserId:
+          type: integer
+        toUserId:
+          type: integer
+        action:
+          type: string
+          enum: [like, dislike]
+      required:
+        - fromUserId
+        - toUserId
+        - action
+
+    LikeResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        isMatch:
+          type: boolean
+      required:
+        - success
+        - isMatch
+
+    ActivatePremiumRequest:
+      type: object
+      properties:
+        userId:
+          type: integer
+      required:
+        - userId
+
+    SwipeCount:
+      type: object
+      properties:
+        count:
+          type: integer
+        userId:
+          type: integer
+      required:
+        - count
+        - userId
