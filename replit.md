@@ -20,20 +20,39 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 ```text
 artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
+├── artifacts/
+│   ├── api-server/         # Express 5 API + WebSocket signaling server (ws)
+│   └── mobile/             # Expo React Native app (VIBE social app)
+├── lib/
+│   ├── api-spec/           # OpenAPI spec + Orval codegen
 │   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
+│   ├── api-zod/            # Generated Zod schemas
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+├── scripts/
+└── pnpm-workspace.yaml
 ```
+
+## VIBE App Features
+- **Auth**: 3-step onboarding (name/age/city → bio → interests), persisted via AsyncStorage
+- **Swipe**: Unlimited swipes with PanResponder + Reanimated animations
+- **Likes tab**: Blurred for free users, paywall to unlock
+- **Messages tab**: Matches list with blur paywall for free users  
+- **Chat screen**: Full real-time chat (polling every 4s) with premium paywall
+- **Video tab**: Omegle-like WebRTC video chat with filters (age range, city) — web only
+- **Profile tab**: Full editing (name/age/city/bio/interests) + DEV buttons
+- **Premium**: Modal paywall at 24,99 PLN/week (simulated)
+- **Design**: Dark #000000, neon yellow #CCFF00, Montserrat font
+
+## WebSocket Signaling Server
+- Path: `/ws` on port 8080 (accessible via `wss://domain/api/ws`)
+- Handles WebRTC peer matching with age/city filters
+- Relays offer/answer/ICE candidates between matched peers
+
+## DB Tables
+- `users`: id, name, age, bio, photo_url, is_premium, city, interests[]
+- `likes`: from_user_id, to_user_id, action (like/dislike)
+- `matches`: user1_id, user2_id (created on mutual like)
+- `messages`: sender_id, receiver_id, content, is_read
 
 ## TypeScript & Composite Projects
 
