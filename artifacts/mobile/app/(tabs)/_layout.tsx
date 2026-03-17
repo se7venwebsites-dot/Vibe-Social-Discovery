@@ -10,7 +10,6 @@ import { useUserContext } from "@/context/UserContext";
 export default function TabLayout() {
   const { isRegistered, isLoadingAuth } = useUserContext();
   const isIOS = Platform.OS === "ios";
-  const isWeb = Platform.OS === "web";
 
   useEffect(() => {
     if (!isLoadingAuth && !isRegistered) {
@@ -34,71 +33,31 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: Colors.textMuted,
         headerShown: false,
-        tabBarStyle: {
-          position: "absolute",
-          backgroundColor: isIOS ? "transparent" : Colors.black,
-          borderTopWidth: isWeb ? 0 : 1,
-          borderTopColor: Colors.border,
-          elevation: 0,
-          height: isWeb ? 64 : undefined,
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          ) : (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                {
-                  backgroundColor: Colors.black,
-                  borderTopWidth: 1,
-                  borderTopColor: Colors.border,
-                },
-              ]}
-            />
-          ),
+        tabBarBackground: () => isIOS ? (
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.black, borderTopWidth: 1, borderTopColor: Colors.border }]} />
+        ),
         tabBarLabelStyle: {
           fontFamily: "Montserrat_500Medium",
-          fontSize: 11,
-          marginBottom: isWeb ? 4 : 0,
+          fontSize: 10,
+          marginBottom: Platform.OS === "web" ? 4 : 0,
+        },
+        tabBarStyle: {
+          position: "absolute",
+          backgroundColor: "transparent",
+          borderTopWidth: 0,
+          elevation: 0,
+          height: Platform.OS === "web" ? 68 : undefined,
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Odkryj",
-          tabBarIcon: ({ color }) => <Feather name="zap" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="likes"
-        options={{
-          title: "Lajki",
-          tabBarIcon: ({ color }) => <Feather name="heart" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: "Wiadomości",
-          tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="video"
-        options={{
-          title: "Na żywo",
-          tabBarIcon: ({ color }) => <Feather name="video" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profil",
-          tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Odkryj", tabBarIcon: ({ color }) => <Feather name="zap" size={22} color={color} /> }} />
+      <Tabs.Screen name="likes" options={{ title: "Lajki", tabBarIcon: ({ color }) => <Feather name="heart" size={22} color={color} /> }} />
+      <Tabs.Screen name="lives" options={{ title: "Live", tabBarIcon: ({ color }) => <Feather name="radio" size={22} color={color} /> }} />
+      <Tabs.Screen name="messages" options={{ title: "Wiadomości", tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} /> }} />
+      <Tabs.Screen name="profile" options={{ title: "Profil", tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }} />
+      <Tabs.Screen name="video" options={{ href: null }} />
     </Tabs>
   );
 }

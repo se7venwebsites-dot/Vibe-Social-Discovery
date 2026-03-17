@@ -46,6 +46,7 @@ router.get("/matches/:userId", async (req, res) => {
       return {
         id: user.id,
         name: user.name,
+        username: user.username ?? null,
         age: user.age,
         bio: user.bio,
         photoUrl: user.photoUrl,

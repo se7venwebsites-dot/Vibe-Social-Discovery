@@ -18,9 +18,11 @@ export const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
 export interface UserProfile {
   id: number;
   name: string;
+  username?: string | null;
   age: number;
   bio: string;
   photoUrl: string;
+  photos?: string[];
   isPremium: boolean;
   city?: string;
   interests?: string[];
@@ -71,7 +73,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Registration failed");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Registration failed");
+    }
     const user: UserProfile = await res.json();
     setCurrentUser(user);
     setIsPremium(false);
@@ -86,7 +91,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Update failed");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Update failed");
+    }
     const updated: UserProfile = await res.json();
     setCurrentUser(updated);
   }, [currentUser]);
@@ -105,7 +113,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     } catch {}
     setIsPremium(true);
-    setCurrentUser((u) => u ? { ...u, isPremium: true } : u);
+    setCurrentUser(u => u ? { ...u, isPremium: true } : u);
     await AsyncStorage.setItem(IS_PREMIUM_KEY, "true");
   }, [currentUser]);
 
@@ -116,18 +124,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <UserContext.Provider
-      value={{
-        currentUser,
-        isRegistered: !!currentUser,
-        isLoadingAuth,
-        isPremium,
-        register,
-        updateProfile,
-        activatePremium,
-        devReset,
-      }}
-    >
+    <UserContext.Provider value={{
+      currentUser,
+      isRegistered: !!currentUser,
+      isLoadingAuth,
+      isPremium,
+      register,
+      updateProfile,
+      activatePremium,
+      devReset,
+    }}>
       {children}
     </UserContext.Provider>
   );

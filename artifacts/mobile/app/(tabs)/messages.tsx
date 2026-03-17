@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,364 +8,300 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
-  Modal,
+  TextInput,
 } from "react-native";
-import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { router } from "expo-router";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
 import { PremiumModal } from "@/components/PremiumModal";
 
-interface MatchedUser {
+type Tab = "matches" | "friends" | "requests";
+
+interface Match {
   id: number;
   name: string;
+  username?: string | null;
   age: number;
-  bio: string;
   photoUrl: string;
-  matchId: number;
-  lastMessage?: string;
-  unreadCount: number;
+  bio: string;
   city?: string;
+  matchId: number;
+  lastMessage?: string | null;
+  unreadCount?: number;
 }
 
-function MessagePaywallModal({ visible, matchUser, onClose, onActivate }: {
-  visible: boolean;
-  matchUser: MatchedUser | null;
-  onClose: () => void;
-  onActivate: () => Promise<void>;
-}) {
-  const [loading, setLoading] = React.useState(false);
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.paywallOverlay}>
-        <Animated.View entering={FadeIn.duration(180)} style={styles.paywallBox}>
-          <Pressable style={styles.paywallClose} onPress={onClose}>
-            <Feather name="x" size={20} color={Colors.textSecondary} />
-          </Pressable>
-          {matchUser && (
-            <Image source={{ uri: matchUser.photoUrl }} style={styles.paywallAvatar} />
-          )}
-          <Text style={styles.paywallTitle}>
-            {matchUser?.name ?? "Ona"} już tu jest!
-          </Text>
-          <Text style={styles.paywallSub}>
-            Odblokuj możliwość rozmowy i odpowiedz{" "}
-            <Text style={{ color: Colors.accent }}>{matchUser?.name ?? "jej"}</Text> już teraz za 24,99 PLN.
-          </Text>
-          <View style={styles.paywallPriceRow}>
-            <Text style={styles.paywallPrice}>24,99 PLN</Text>
-            <Text style={styles.paywallPriceSub}> / tydzień</Text>
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.paywallBtn, pressed && { opacity: 0.85 }]}
-            onPress={async () => {
-              setLoading(true);
-              await onActivate();
-              setLoading(false);
-            }}
-            disabled={loading}
-          >
-            {loading ? <ActivityIndicator color={Colors.black} /> : (
-              <>
-                <Feather name="message-circle" size={16} color={Colors.black} />
-                <Text style={styles.paywallBtnText}>Odblokuj rozmowę</Text>
-              </>
-            )}
-          </Pressable>
-          <Text style={styles.paywallNote}>Zakup jest symulowany.</Text>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
+interface FriendRequest {
+  requestId: number;
+  fromUser: { id: number; name: string; username?: string | null; photoUrl: string; age: number; city?: string };
 }
 
-function MatchCard({ match, index, isPremium, onPress }: {
-  match: MatchedUser;
-  index: number;
-  isPremium: boolean;
-  onPress: () => void;
-}) {
-  const isLocked = !isPremium;
-
-  return (
-    <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-      <Pressable
-        style={({ pressed }) => [styles.matchCard, pressed && { backgroundColor: Colors.surface }]}
-        onPress={onPress}
-      >
-        <View style={styles.avatarWrap}>
-          <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
-          {match.unreadCount > 0 && (
-            <View style={styles.unreadDot}>
-              <Text style={styles.unreadDotText}>{match.unreadCount > 9 ? "9+" : match.unreadCount}</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.matchInfo}>
-          <View style={styles.matchNameRow}>
-            <Text style={styles.matchName}>{match.name}</Text>
-            {isLocked && (
-              <View style={styles.lockBadge}>
-                <Feather name="lock" size={10} color={Colors.black} />
-                <Text style={styles.lockBadgeText}>Premium</Text>
-              </View>
-            )}
-          </View>
-          {isLocked ? (
-            <View style={styles.blurMsgRow}>
-              <View style={styles.blurMsg} />
-              <View style={[styles.blurMsg, { width: 60, opacity: 0.4 }]} />
-            </View>
-          ) : (
-            <Text style={styles.lastMsg} numberOfLines={1}>
-              {match.lastMessage ?? "Zacznij rozmowę!"}
-            </Text>
-          )}
-        </View>
-        <Feather name="chevron-right" size={16} color={Colors.textMuted} />
-      </Pressable>
-    </Animated.View>
-  );
+interface Friend {
+  id: number; name: string; username?: string | null; photoUrl: string; age: number; city?: string;
 }
 
 export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
-  const { currentUser, isPremium, activatePremium } = useUserContext();
+  const { currentUser, isPremium } = useUserContext();
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("matches");
   const [showPremium, setShowPremium] = useState(false);
-  const [selectedMatch, setSelectedMatch] = useState<MatchedUser | null>(null);
+  const [searchUsername, setSearchUsername] = useState("");
+  const [searchResult, setSearchResult] = useState<Friend | null | "not_found">(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
-  const { data: matches = [], isLoading } = useQuery<MatchedUser[]>({
+  const { data: matches = [], isLoading: matchesLoading } = useQuery<Match[]>({
     queryKey: ["matches", currentUser?.id],
-    queryFn: async () => {
-      if (!currentUser) return [];
-      const res = await fetch(`${BASE_URL}/matches/${currentUser.id}`);
-      return res.json();
-    },
+    queryFn: async () => { const res = await fetch(`${BASE_URL}/matches/${currentUser!.id}`); return res.json(); },
     enabled: !!currentUser,
-    refetchInterval: 10000,
   });
 
-  const handleMatchPress = (match: MatchedUser) => {
-    Haptics.selectionAsync();
-    if (!isPremium) {
-      setSelectedMatch(match);
-      setShowPremium(true);
-    } else {
-      router.push({ pathname: "/chat/[id]", params: { id: String(match.id), name: match.name } });
-    }
+  const { data: friendRequests = [], isLoading: reqLoading } = useQuery<FriendRequest[]>({
+    queryKey: ["friend-requests", currentUser?.id],
+    queryFn: async () => { const res = await fetch(`${BASE_URL}/friends/requests/${currentUser!.id}`); return res.json(); },
+    enabled: !!currentUser,
+    refetchInterval: 30000,
+  });
+
+  const { data: friends = [], isLoading: friendsLoading } = useQuery<Friend[]>({
+    queryKey: ["friends", currentUser?.id],
+    queryFn: async () => { const res = await fetch(`${BASE_URL}/friends/${currentUser!.id}`); return res.json(); },
+    enabled: !!currentUser,
+    refetchInterval: 30000,
+  });
+
+  const respondToRequest = useMutation({
+    mutationFn: async ({ requestId, status }: { requestId: number; status: string }) => {
+      await fetch(`${BASE_URL}/friends/request/${requestId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["friend-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+    },
+  });
+
+  const sendFriendRequest = useMutation({
+    mutationFn: async (toUserId: number) => {
+      const res = await fetch(`${BASE_URL}/friends/request`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromUserId: currentUser!.id, toUserId }),
+      });
+      return res.json();
+    },
+    onSuccess: () => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setSearchResult(null); setSearchUsername(""); },
+  });
+
+  const handleSearch = async () => {
+    const raw = searchUsername.trim().replace(/^@/, "");
+    if (!raw) return;
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/users/by-username/${raw}`);
+      if (!res.ok) { setSearchResult("not_found"); return; }
+      const user = await res.json();
+      if (user.id === currentUser?.id) { setSearchResult("not_found"); return; }
+      setSearchResult(user);
+    } catch { setSearchResult("not_found"); }
+    finally { setSearchLoading(false); }
   };
+
+  const openChat = (matchId: number) => {
+    if (!isPremium) { setShowPremium(true); return; }
+    router.push(`/chat/${matchId}`);
+  };
+
+  const pendingCount = friendRequests.length;
 
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Wiadomości</Text>
-        {isPremium ? (
-          <View style={styles.premiumTag}>
-            <Feather name="zap" size={11} color={Colors.black} />
-            <Text style={styles.premiumTagText}>VIBE+</Text>
-          </View>
-        ) : (
-          <Pressable style={styles.premiumTagOutline} onPress={() => setShowPremium(true)}>
-            <Feather name="lock" size={11} color={Colors.accent} />
-            <Text style={styles.premiumTagOutlineText}>Odblokuj</Text>
+      <View style={styles.header}><Text style={styles.title}>Wiadomości</Text></View>
+
+      <View style={styles.tabBar}>
+        {(["matches", "friends", "requests"] as Tab[]).map(t => (
+          <Pressable key={t} style={[styles.tabBtn, tab === t && styles.tabBtnActive]} onPress={() => { setTab(t); Haptics.selectionAsync(); }}>
+            {t === "requests" && pendingCount > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{pendingCount}</Text></View>}
+            <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>
+              {t === "matches" ? "Matche" : t === "friends" ? "Znajomi" : "Zaproszenia"}
+            </Text>
           </Pressable>
-        )}
+        ))}
       </View>
 
-      {!isPremium && (
-        <Animated.View entering={FadeIn.delay(100)} style={styles.freeBanner}>
-          <Feather name="info" size={14} color={Colors.accent} />
-          <Text style={styles.freeBannerText}>
-            Darmowi użytkownicy widzą mecze, ale{" "}
-            <Text style={{ color: Colors.accent }}>nie mogą odczytać wiadomości</Text>.
-          </Text>
-        </Animated.View>
+      {tab === "matches" && (
+        matchesLoading ? <View style={styles.center}><ActivityIndicator color={Colors.accent} /></View> :
+        matches.length === 0 ? (
+          <View style={styles.center}>
+            <Feather name="heart" size={40} color={Colors.textMuted} />
+            <Text style={styles.emptyTitle}>Brak dopasowań</Text>
+            <Text style={styles.emptyText}>Przesuń w prawo, żeby znaleźć swój match!</Text>
+          </View>
+        ) : (
+          <FlatList data={matches} keyExtractor={m => String(m.matchId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, gap: 10 }}
+            renderItem={({ item: match, index }) => (
+              <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
+                <Pressable style={styles.card} onPress={() => openChat(match.matchId)}>
+                  <View style={styles.avatarWrap}>
+                    <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
+                    <View style={styles.onlineDot} />
+                  </View>
+                  <View style={styles.cardInfo}>
+                    <Text style={styles.cardName}>{match.name}, {match.age}</Text>
+                    {match.username && <Text style={styles.cardUsername}>@{match.username}</Text>}
+                    {!isPremium ? (
+                      <View style={styles.lockRow}><Feather name="lock" size={11} color={Colors.textMuted} /><Text style={styles.lockText}>Odblokuj za 24,99 zł/mies.</Text></View>
+                    ) : (
+                      <Text style={styles.cardPreview} numberOfLines={1}>{match.lastMessage || "Powiedz cześć! 👋"}</Text>
+                    )}
+                  </View>
+                  <Feather name="chevron-right" size={18} color={Colors.textMuted} />
+                </Pressable>
+              </Animated.View>
+            )}
+            showsVerticalScrollIndicator={false}
+          />
+        )
       )}
 
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={Colors.accent} size="large" />
+      {tab === "friends" && (
+        <View style={{ flex: 1 }}>
+          <View style={styles.searchSection}>
+            <View style={styles.searchRow}>
+              <Text style={styles.atSign}>@</Text>
+              <TextInput style={styles.searchInput} placeholder="Wpisz nick znajomego..." placeholderTextColor={Colors.textMuted}
+                value={searchUsername} onChangeText={t => { setSearchUsername(t); setSearchResult(null); }}
+                autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={handleSearch} />
+              <Pressable style={styles.searchBtn} onPress={handleSearch}>
+                {searchLoading ? <ActivityIndicator size="small" color={Colors.black} /> : <Feather name="search" size={16} color={Colors.black} />}
+              </Pressable>
+            </View>
+            {searchResult === "not_found" && <Text style={styles.notFound}>Nie znaleziono @{searchUsername.replace(/^@/, "")}</Text>}
+            {searchResult && searchResult !== "not_found" && (
+              <Animated.View entering={FadeInDown.springify()} style={styles.resultCard}>
+                <Image source={{ uri: (searchResult as Friend).photoUrl }} style={styles.avatar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardName}>{(searchResult as Friend).name}</Text>
+                  <Text style={styles.cardUsername}>@{(searchResult as Friend).username}</Text>
+                </View>
+                <Pressable style={styles.addBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); sendFriendRequest.mutate((searchResult as Friend).id); }} disabled={sendFriendRequest.isPending}>
+                  {sendFriendRequest.isPending ? <ActivityIndicator size="small" color={Colors.black} /> : <><Feather name="user-plus" size={14} color={Colors.black} /><Text style={styles.addBtnText}>Dodaj</Text></>}
+                </Pressable>
+              </Animated.View>
+            )}
+          </View>
+          {friendsLoading ? <View style={styles.center}><ActivityIndicator color={Colors.accent} /></View> :
+            friends.length === 0 ? (
+              <View style={styles.center}>
+                <Feather name="users" size={40} color={Colors.textMuted} />
+                <Text style={styles.emptyTitle}>Brak znajomych</Text>
+                <Text style={styles.emptyText}>Szukaj po @nicku i dodaj pierwszego znajomego!</Text>
+              </View>
+            ) : (
+              <FlatList data={friends} keyExtractor={f => String(f.id)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8, gap: 10 }}
+                renderItem={({ item: friend, index }) => {
+                  const matchItem = matches.find(m => m.id === friend.id);
+                  return (
+                    <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
+                      <Pressable style={styles.card} onPress={() => { if (matchItem) openChat(matchItem.matchId); }}>
+                        <Image source={{ uri: friend.photoUrl }} style={styles.avatar} />
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardName}>{friend.name}, {friend.age}</Text>
+                          {friend.username && <Text style={styles.cardUsername}>@{friend.username}</Text>}
+                        </View>
+                        {matchItem && <Feather name="message-circle" size={20} color={Colors.accent} />}
+                      </Pressable>
+                    </Animated.View>
+                  );
+                }}
+                showsVerticalScrollIndicator={false}
+              />
+            )
+          }
         </View>
-      ) : matches.length === 0 ? (
-        <View style={styles.center}>
-          <Feather name="message-circle" size={48} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>Brak dopasowań</Text>
-          <Text style={styles.emptyText}>Swipuj, żeby tworzyć dopasowania!</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={matches}
-          keyExtractor={(m) => String(m.id)}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 90 }]}
-          renderItem={({ item, index }) => (
-            <MatchCard
-              match={item}
-              index={index}
-              isPremium={isPremium}
-              onPress={() => handleMatchPress(item)}
-            />
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          showsVerticalScrollIndicator={false}
-        />
       )}
 
-      <PremiumModal
-        visible={showPremium && !selectedMatch}
-        onClose={() => setShowPremium(false)}
-        onActivate={async () => {
-          await activatePremium();
-          setShowPremium(false);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }}
-      />
+      {tab === "requests" && (
+        reqLoading ? <View style={styles.center}><ActivityIndicator color={Colors.accent} /></View> :
+        friendRequests.length === 0 ? (
+          <View style={styles.center}>
+            <Feather name="inbox" size={40} color={Colors.textMuted} />
+            <Text style={styles.emptyTitle}>Brak zaproszeń</Text>
+            <Text style={styles.emptyText}>Gdy ktoś Cię zaprosi, pojawi się tutaj.</Text>
+          </View>
+        ) : (
+          <FlatList data={friendRequests} keyExtractor={r => String(r.requestId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8, gap: 10 }}
+            renderItem={({ item: req, index }) => (
+              <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.requestCard}>
+                <Image source={{ uri: req.fromUser.photoUrl }} style={styles.avatar} />
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardName}>{req.fromUser.name}</Text>
+                  {req.fromUser.username && <Text style={styles.cardUsername}>@{req.fromUser.username}</Text>}
+                  {req.fromUser.city && <Text style={styles.cityText}>📍 {req.fromUser.city}</Text>}
+                </View>
+                <View style={styles.reqActions}>
+                  <Pressable style={styles.acceptBtn} onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); respondToRequest.mutate({ requestId: req.requestId, status: "accepted" }); }}>
+                    <Feather name="check" size={16} color={Colors.black} />
+                  </Pressable>
+                  <Pressable style={styles.declineBtn} onPress={() => { Haptics.selectionAsync(); respondToRequest.mutate({ requestId: req.requestId, status: "declined" }); }}>
+                    <Feather name="x" size={16} color={Colors.textSecondary} />
+                  </Pressable>
+                </View>
+              </Animated.View>
+            )}
+            showsVerticalScrollIndicator={false}
+          />
+        )
+      )}
 
-      <MessagePaywallModal
-        visible={showPremium && !!selectedMatch}
-        matchUser={selectedMatch}
-        onClose={() => { setShowPremium(false); setSelectedMatch(null); }}
-        onActivate={async () => {
-          await activatePremium();
-          setShowPremium(false);
-          setSelectedMatch(null);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }}
-      />
+      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} onActivate={async () => setShowPremium(false)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingBottom: 12,
-    paddingTop: 8,
-  },
+  header: { paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
-  premiumTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  premiumTagText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
-  premiumTagOutline: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  premiumTagOutlineText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
-  freeBanner: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    backgroundColor: "rgba(204,255,0,0.07)",
-    borderWidth: 1,
-    borderColor: "rgba(204,255,0,0.2)",
-    borderRadius: 12,
-    padding: 12,
-  },
-  freeBannerText: {
-    flex: 1,
-    fontFamily: "Montserrat_400Regular",
-    fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-  listContent: { paddingTop: 4 },
-  matchCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    gap: 14,
-    backgroundColor: Colors.black,
-  },
+  tabBar: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 12 },
+  tabBtn: { flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", position: "relative" },
+  tabBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  tabBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textSecondary },
+  tabBtnTextActive: { color: Colors.black },
+  badge: { position: "absolute", top: -6, right: -6, backgroundColor: Colors.danger, width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", zIndex: 1 },
+  badgeText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: "#fff" },
+  searchSection: { paddingHorizontal: 16, marginBottom: 8, gap: 8 },
+  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, gap: 4 },
+  atSign: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.accent },
+  searchInput: { flex: 1, paddingVertical: 12, fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textPrimary },
+  searchBtn: { backgroundColor: Colors.accent, width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  notFound: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.danger, paddingHorizontal: 4 },
+  resultCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.border },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.accent, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  addBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.black },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingBottom: 60 },
+  emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 18, color: Colors.textPrimary },
+  emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
+  card: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border },
   avatarWrap: { position: "relative" },
-  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.surface },
-  unreadDot: {
-    position: "absolute",
-    top: -2, right: -2,
-    backgroundColor: Colors.accent,
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: Colors.black,
-  },
-  unreadDotText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: Colors.black },
-  matchInfo: { flex: 1 },
-  matchNameRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
-  matchName: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.textPrimary },
-  lockBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  lockBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: Colors.black },
-  blurMsgRow: { flexDirection: "row", gap: 6, alignItems: "center" },
-  blurMsg: { height: 10, width: 90, borderRadius: 5, backgroundColor: Colors.border },
-  lastMsg: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary },
-  separator: { height: 1, backgroundColor: Colors.border, marginLeft: 90 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
-  emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
-  paywallOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
-  paywallBox: {
-    backgroundColor: Colors.cardBg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 28,
-    paddingBottom: 44,
-    borderTopWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-    alignItems: "center",
-  },
-  paywallClose: { position: "absolute", top: 16, right: 20, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  paywallAvatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: Colors.accent },
-  paywallTitle: { fontFamily: "Montserrat_700Bold", fontSize: 22, color: Colors.textPrimary, textAlign: "center" },
-  paywallSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 21 },
-  paywallPriceRow: { flexDirection: "row", alignItems: "baseline" },
-  paywallPrice: { fontFamily: "Montserrat_700Bold", fontSize: 36, color: Colors.accent },
-  paywallPriceSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary },
-  paywallBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 28,
-    paddingVertical: 16,
-    borderRadius: 14,
-    marginTop: 4,
-  },
-  paywallBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
-  paywallNote: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.surface },
+  onlineDot: { position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: 6, backgroundColor: "#00DC82", borderWidth: 2, borderColor: Colors.black },
+  cardInfo: { flex: 1, gap: 3 },
+  cardName: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary },
+  cardUsername: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.accent },
+  cardPreview: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary },
+  lockRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  lockText: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
+  requestCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border },
+  reqActions: { flexDirection: "row", gap: 8 },
+  acceptBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center" },
+  declineBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", justifyContent: "center" },
+  cityText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
 });
