@@ -265,7 +265,7 @@ export default function VideoScreen() {
     return (
       <View style={[styles.container, { paddingTop: topInset }]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Na żywo</Text>
+          <Text style={styles.title}>Losowy czat</Text>
         </View>
         <NotWebFallback />
       </View>
@@ -275,7 +275,7 @@ export default function VideoScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Na żywo</Text>
+        <Text style={styles.title}>Losowy czat</Text>
         {status === "idle" || status === "error" ? (
           <Pressable
             style={styles.filterBtn}

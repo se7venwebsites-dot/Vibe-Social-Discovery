@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -41,6 +41,7 @@ interface User {
   photoUrl: string;
   photos?: string[];
   isPremium: boolean;
+  isVerified?: boolean;
   city?: string;
   interests?: string[];
 }
@@ -148,6 +149,11 @@ function SwipeCard({
         <View style={styles.nameRow}>
           <Text style={styles.userName}>{user.name}</Text>
           <Text style={styles.userAge}>, {user.age}</Text>
+          {user.isVerified && (
+            <View style={styles.verifiedBadge}>
+              <Feather name="check" size={10} color="#fff" />
+            </View>
+          )}
         </View>
         <Text style={styles.userBio} numberOfLines={2}>{user.bio}</Text>
         {user.interests && user.interests.length > 0 ? (
@@ -174,22 +180,28 @@ export default function DiscoverScreen() {
   const [cardStack, setCardStack] = useState<User[]>([]);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
-  const { isLoading, refetch } = useQuery<User[]>({
+  const { data: usersData, isLoading, refetch } = useQuery<User[]>({
     queryKey: ["users", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
       const res = await fetch(`${BASE_URL}/users?currentUserId=${currentUser.id}`);
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!currentUser,
-    onSuccess: (data: User[]) => {
+    staleTime: 30000,
+  });
+
+  useEffect(() => {
+    if (usersData && usersData.length > 0) {
       setCardStack(prev => {
         const existingIds = new Set(prev.map(u => u.id));
-        const newCards = data.filter(u => !existingIds.has(u.id));
+        const newCards = usersData.filter(u => !existingIds.has(u.id));
+        if (newCards.length === 0) return prev;
         return [...prev, ...newCards].slice(0, 15);
       });
-    },
-  } as Parameters<typeof useQuery>[0]);
+    }
+  }, [usersData]);
 
   const handleSwipe = useCallback(async (dir: "left" | "right") => {
     const topUser = cardStack[0];
@@ -270,6 +282,23 @@ export default function DiscoverScreen() {
         )}
       </View>
 
+      {displayStack.length > 0 && (
+        <View style={[styles.actionButtons, { paddingBottom: insets.bottom + 80 }]}>
+          <Pressable
+            style={[styles.actionBtn, styles.actionBtnNope]}
+            onPress={() => handleSwipe("left")}
+          >
+            <Feather name="x" size={28} color={Colors.danger} />
+          </Pressable>
+          <Pressable
+            style={[styles.actionBtn, styles.actionBtnLike]}
+            onPress={() => handleSwipe("right")}
+          >
+            <Feather name="zap" size={28} color={Colors.accent} />
+          </Pressable>
+        </View>
+      )}
+
       <PremiumModal
         visible={showPremium}
         onClose={() => setShowPremium(false)}
@@ -327,8 +356,6 @@ const styles = StyleSheet.create({
     right: 0,
     height: "50%",
     backgroundColor: "transparent",
-    // simulate gradient: dark bottom
-    backgroundImage: undefined,
   },
   stampLike: {
     position: "absolute",
@@ -360,14 +387,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 22,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     paddingTop: 28,
   },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 },
   locationText: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: "rgba(255,255,255,0.65)" },
-  nameRow: { flexDirection: "row", alignItems: "baseline", marginBottom: 6 },
+  nameRow: { flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 4 },
   userName: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary, letterSpacing: -0.5 },
-  userAge: { fontFamily: "Montserrat_600SemiBold", fontSize: 22, color: Colors.textPrimary, marginLeft: 4 },
+  userAge: { fontFamily: "Montserrat_600SemiBold", fontSize: 22, color: Colors.textPrimary },
+  verifiedBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center", marginLeft: 4 },
   userBio: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 19, marginBottom: 10 },
   tagsRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", marginBottom: 6 },
   tag: { backgroundColor: "rgba(204,255,0,0.12)", borderWidth: 1, borderColor: "rgba(204,255,0,0.25)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
@@ -379,4 +407,8 @@ const styles = StyleSheet.create({
   emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 15, color: Colors.textSecondary, textAlign: "center" },
   refreshBtn: { marginTop: 8, backgroundColor: Colors.surface, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   refreshBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.accent },
+  actionButtons: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 32, paddingTop: 12 },
+  actionBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", borderWidth: 2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, shadowOpacity: 0.3 },
+  actionBtnNope: { borderColor: Colors.danger, backgroundColor: "rgba(255,59,92,0.08)", shadowColor: Colors.danger },
+  actionBtnLike: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.08)", shadowColor: Colors.accent },
 });

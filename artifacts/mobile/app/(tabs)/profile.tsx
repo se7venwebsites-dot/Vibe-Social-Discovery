@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,12 +11,12 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  FlatList,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
@@ -27,7 +27,20 @@ const INTERESTS_OPTIONS = [
   "kino", "literatura", "fitness", "fotografia", "gaming", "yoga",
 ];
 
+const BADGES = [
+  { id: "new", label: "Nowy", icon: "⭐", desc: "Witaj w VIBE!", unlocked: true },
+  { id: "active", label: "Aktywny", icon: "🔥", desc: "Zaloguj się 7 dni z rzędu", unlocked: false },
+  { id: "popular", label: "Popularny", icon: "💫", desc: "Zdobądź 50 lajków", unlocked: false },
+  { id: "verified", label: "Zweryfikowany", icon: "✅", desc: "Zweryfikuj swoje konto", unlocked: false },
+  { id: "streamer", label: "Streamer", icon: "📡", desc: "Przeprowadź swój pierwszy live", unlocked: false },
+  { id: "social", label: "Towarzyski", icon: "🤝", desc: "Dodaj 10 znajomych", unlocked: false },
+];
+
 type EditMode = "none" | "basic" | "gallery";
+
+const COINS_KEY = "vibe_coins";
+const DAILY_REWARD_KEY = "vibe_daily_reward";
+const LOGIN_STREAK_KEY = "vibe_login_streak";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -36,6 +49,10 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
   const [addPhotoModalVisible, setAddPhotoModalVisible] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState("");
+  const [coins, setCoins] = useState(0);
+  const [loginStreak, setLoginStreak] = useState(1);
+  const [dailyRewardClaimed, setDailyRewardClaimed] = useState(false);
+  const [showRewardBanner, setShowRewardBanner] = useState(false);
 
   const [name, setName] = useState(currentUser?.name ?? "");
   const [bio, setBio] = useState(currentUser?.bio ?? "");
@@ -43,6 +60,47 @@ export default function ProfileScreen() {
   const [interests, setInterests] = useState<string[]>(currentUser?.interests ?? []);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
+
+  useEffect(() => {
+    const loadCoins = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(COINS_KEY);
+        setCoins(stored ? parseInt(stored) : 200);
+
+        const lastReward = await AsyncStorage.getItem(DAILY_REWARD_KEY);
+        const streakStr = await AsyncStorage.getItem(LOGIN_STREAK_KEY);
+        const today = new Date().toDateString();
+        const streak = streakStr ? parseInt(streakStr) : 1;
+        setLoginStreak(streak);
+
+        if (lastReward !== today) {
+          setDailyRewardClaimed(false);
+          setShowRewardBanner(true);
+        } else {
+          setDailyRewardClaimed(true);
+        }
+      } catch {}
+    };
+    loadCoins();
+  }, []);
+
+  const claimDailyReward = async () => {
+    const reward = 50 + loginStreak * 10;
+    const newCoins = coins + reward;
+    const today = new Date().toDateString();
+    setCoins(newCoins);
+    setDailyRewardClaimed(true);
+    setShowRewardBanner(false);
+    await AsyncStorage.setItem(COINS_KEY, String(newCoins));
+    await AsyncStorage.setItem(DAILY_REWARD_KEY, today);
+    await AsyncStorage.setItem(LOGIN_STREAK_KEY, String(loginStreak + 1));
+    setLoginStreak(s => s + 1);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Dzienna nagroda!", `Zdobyłeś ${reward} monet! 🎉\nStreak: ${loginStreak} dni z rzędu`);
+  };
+
+  const profileLevel = Math.floor(loginStreak / 3) + 1;
+  const profileXp = (loginStreak % 3) * 33;
 
   if (!currentUser) {
     return (
@@ -142,6 +200,21 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Daily reward banner */}
+        {showRewardBanner && !dailyRewardClaimed && (
+          <Animated.View entering={FadeInDown} style={styles.rewardBanner}>
+            <Text style={styles.rewardBannerIcon}>🎁</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rewardBannerTitle}>Dzienna nagroda!</Text>
+              <Text style={styles.rewardBannerSub}>Zgarnij {50 + loginStreak * 10} monet za dzisiejsze logowanie</Text>
+            </View>
+            <Pressable style={styles.rewardClaimBtn} onPress={claimDailyReward}>
+              <Text style={styles.rewardClaimBtnText}>Odbierz</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Avatar + meta */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
             <Image source={{ uri: currentUser.photoUrl }} style={styles.avatar} />
@@ -152,7 +225,9 @@ export default function ProfileScreen() {
             )}
           </View>
           <View style={styles.profileMeta}>
-            <Text style={styles.profileName}>{currentUser.name}, {currentUser.age}</Text>
+            <View style={styles.nameVerifiedRow}>
+              <Text style={styles.profileName}>{currentUser.name}, {currentUser.age}</Text>
+            </View>
             {currentUser.username && <Text style={styles.profileUsername}>@{currentUser.username}</Text>}
             {currentUser.city && (
               <View style={styles.locationRow}>
@@ -169,6 +244,52 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Coins + Level */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>💰</Text>
+            <Text style={styles.statValue}>{coins}</Text>
+            <Text style={styles.statLabel}>Monety</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🏆</Text>
+            <Text style={styles.statValue}>Lvl {profileLevel}</Text>
+            <Text style={styles.statLabel}>Poziom</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>🔥</Text>
+            <Text style={styles.statValue}>{loginStreak}</Text>
+            <Text style={styles.statLabel}>Streak</Text>
+          </View>
+        </View>
+
+        {/* XP Bar */}
+        <View style={styles.xpSection}>
+          <View style={styles.xpRow}>
+            <Text style={styles.xpLabel}>XP do kolejnego poziomu</Text>
+            <Text style={styles.xpValue}>{profileXp}/100</Text>
+          </View>
+          <View style={styles.xpBar}>
+            <View style={[styles.xpFill, { width: `${profileXp}%` }]} />
+          </View>
+        </View>
+
+        {/* Badges */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Odznaki</Text>
+          <View style={styles.badgesGrid}>
+            {BADGES.map((badge) => (
+              <View key={badge.id} style={[styles.badgeCard, !badge.unlocked && styles.badgeCardLocked]}>
+                <Text style={styles.badgeIcon}>{badge.icon}</Text>
+                <Text style={[styles.badgeLabel, !badge.unlocked && styles.badgeLabelLocked]}>{badge.label}</Text>
+                <Text style={styles.badgeDesc} numberOfLines={2}>{badge.desc}</Text>
+                {!badge.unlocked && <View style={styles.badgeLock}><Feather name="lock" size={10} color={Colors.textMuted} /></View>}
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Edit / Bio */}
         {editMode === "basic" ? (
           <Animated.View entering={FadeIn} style={styles.section}>
             <Text style={styles.sectionTitle}>Edytuj profil</Text>
@@ -209,6 +330,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Gallery */}
         <View style={styles.section}>
           <View style={styles.sectionRow}>
             <Text style={styles.sectionTitle}>Galeria zdjęć</Text>
@@ -252,6 +374,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Premium */}
         {!isPremium && (
           <View style={styles.section}>
             <Pressable style={styles.premiumCard} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); activatePremium(); }}>
@@ -267,6 +390,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Dev tools */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Narzędzia DEV</Text>
           {!isPremium && (
@@ -275,6 +399,15 @@ export default function ProfileScreen() {
               <Text style={styles.devBtnText}>DEV: Aktywuj Premium</Text>
             </Pressable>
           )}
+          <Pressable style={styles.devBtn} onPress={async () => {
+            const newCoins = coins + 500;
+            setCoins(newCoins);
+            await AsyncStorage.setItem(COINS_KEY, String(newCoins));
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }}>
+            <Text style={{ fontSize: 14 }}>💰</Text>
+            <Text style={styles.devBtnText}>DEV: +500 monet</Text>
+          </Pressable>
           <Pressable style={[styles.devBtn, styles.devBtnDanger]} onPress={() => {
             Alert.alert("Resetuj profil", "Czy na pewno chcesz zresetować konto?", [
               { text: "Anuluj", style: "cancel" },
@@ -322,26 +455,52 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
   editBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: Colors.accent, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
   editBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.accent },
   cancelBtn: { paddingHorizontal: 12, paddingVertical: 7 },
   cancelBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textSecondary },
+  rewardBanner: { marginHorizontal: 16, marginBottom: 12, backgroundColor: "rgba(204,255,0,0.1)", borderWidth: 1, borderColor: "rgba(204,255,0,0.3)", borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  rewardBannerIcon: { fontSize: 28 },
+  rewardBannerTitle: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.accent },
+  rewardBannerSub: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textSecondary },
+  rewardClaimBtn: { backgroundColor: Colors.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  rewardClaimBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.black },
   avatarSection: { flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 24, marginBottom: 16 },
   avatarWrap: { position: "relative" },
   avatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderColor: Colors.accent },
   premiumRing: { position: "absolute", bottom: 0, right: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: Colors.black },
   profileMeta: { flex: 1, gap: 4 },
+  nameVerifiedRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   profileName: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
   profileUsername: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.accent },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   locationText: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
   premiumBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.accent, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, alignSelf: "flex-start" },
   premiumBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: Colors.black },
+  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 10, marginBottom: 12 },
+  statCard: { flex: 1, backgroundColor: Colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, padding: 14, alignItems: "center", gap: 4 },
+  statIcon: { fontSize: 20 },
+  statValue: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary },
+  statLabel: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
+  xpSection: { paddingHorizontal: 16, marginBottom: 16, gap: 6 },
+  xpRow: { flexDirection: "row", justifyContent: "space-between" },
+  xpLabel: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textSecondary },
+  xpValue: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.accent },
+  xpBar: { height: 6, backgroundColor: Colors.surface, borderRadius: 3, overflow: "hidden" },
+  xpFill: { height: "100%", backgroundColor: Colors.accent, borderRadius: 3 },
   section: { paddingHorizontal: 20, marginBottom: 16, gap: 12 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sectionTitle: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.textPrimary },
+  badgesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  badgeCard: { width: "30%", backgroundColor: Colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, padding: 12, alignItems: "center", gap: 4, position: "relative" },
+  badgeCardLocked: { opacity: 0.5 },
+  badgeIcon: { fontSize: 24 },
+  badgeLabel: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.textPrimary, textAlign: "center" },
+  badgeLabelLocked: { color: Colors.textMuted },
+  badgeDesc: { fontFamily: "Montserrat_400Regular", fontSize: 9, color: Colors.textMuted, textAlign: "center" },
+  badgeLock: { position: "absolute", top: 6, right: 6 },
   galleryHint: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
   bioDisplay: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, lineHeight: 21 },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

@@ -9,7 +9,6 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${raw
 
 const server = createServer(app);
 
-// ---- WebRTC Signaling Server ----
 const wss = new WebSocketServer({ server, path: "/ws" });
 
 interface Peer {
@@ -25,8 +24,18 @@ interface Peer {
   peerId: string;
 }
 
+// Random video chat state
 const waiting: Map<string, Peer> = new Map();
 const connected: Map<string, Peer> = new Map();
+
+// Live streaming state
+interface LiveRoom {
+  hostPeerId: string;
+  viewerPeerIds: Set<string>;
+}
+const liveRooms: Map<number, LiveRoom> = new Map();
+const allPeers: Map<string, Peer> = new Map();
+const peerLiveRole: Map<string, { liveId: number; role: "host" | "viewer" }> = new Map();
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -41,7 +50,6 @@ function sendTo(peer: Peer, data: object) {
 function findMatch(seeker: Peer): Peer | undefined {
   for (const [id, candidate] of waiting) {
     if (id === seeker.peerId) continue;
-    // Check filters
     const seekerWantsAge =
       seeker.filterAgeMin != null && seeker.filterAgeMax != null
         ? (candidate.age ?? 99) >= seeker.filterAgeMin && (candidate.age ?? 0) <= seeker.filterAgeMax
@@ -58,7 +66,6 @@ function findMatch(seeker: Peer): Peer | undefined {
       candidate.filterCity && candidate.filterCity !== "all"
         ? seeker.city === candidate.filterCity
         : true;
-
     if (seekerWantsAge && candidateWantsAge && seekerWantsCity && candidateWantsCity) {
       return candidate;
     }
@@ -66,9 +73,33 @@ function findMatch(seeker: Peer): Peer | undefined {
   return undefined;
 }
 
+function cleanupLivePeer(peer: Peer) {
+  const liveInfo = peerLiveRole.get(peer.peerId);
+  if (!liveInfo) return;
+  const { liveId, role } = liveInfo;
+  const room = liveRooms.get(liveId);
+  if (room) {
+    if (role === "host") {
+      room.viewerPeerIds.forEach((vId) => {
+        const viewer = allPeers.get(vId);
+        if (viewer) sendTo(viewer, { type: "live-ended" });
+        peerLiveRole.delete(vId);
+      });
+      liveRooms.delete(liveId);
+    } else {
+      room.viewerPeerIds.delete(peer.peerId);
+      const host = allPeers.get(room.hostPeerId);
+      if (host) sendTo(host, { type: "viewer-left", viewerPeerId: peer.peerId });
+    }
+  }
+  peerLiveRole.delete(peer.peerId);
+}
+
 function disconnectPeer(peer: Peer) {
   waiting.delete(peer.peerId);
   connected.delete(peer.peerId);
+  allPeers.delete(peer.peerId);
+  cleanupLivePeer(peer);
   if (peer.partnerId) {
     const partner = connected.get(peer.partnerId);
     if (partner) {
@@ -84,6 +115,7 @@ function disconnectPeer(peer: Peer) {
 wss.on("connection", (ws) => {
   const peerId = generateId();
   const peer: Peer = { ws, peerId };
+  allPeers.set(peerId, peer);
 
   ws.on("message", (raw) => {
     let msg: Record<string, unknown>;
@@ -94,6 +126,7 @@ wss.on("connection", (ws) => {
     }
 
     switch (msg.type) {
+      // ---- Random video chat ----
       case "join": {
         peer.userId = msg.userId as number;
         peer.name = msg.name as string;
@@ -102,10 +135,8 @@ wss.on("connection", (ws) => {
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? undefined;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? undefined;
         peer.filterCity = (msg.filterCity as string) ?? undefined;
-
         waiting.set(peerId, peer);
         sendTo(peer, { type: "waiting", peerId });
-
         const match = findMatch(peer);
         if (match) {
           waiting.delete(peerId);
@@ -114,13 +145,11 @@ wss.on("connection", (ws) => {
           match.partnerId = peerId;
           connected.set(peerId, peer);
           connected.set(match.peerId, match);
-
           sendTo(peer, { type: "matched", initiator: true, partnerName: match.name, partnerAge: match.age, partnerCity: match.city });
           sendTo(match, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city });
         }
         break;
       }
-
       case "next": {
         if (peer.partnerId) {
           const partner = connected.get(peer.partnerId);
@@ -134,13 +163,11 @@ wss.on("connection", (ws) => {
           connected.delete(peerId);
         }
         waiting.delete(peerId);
-
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? peer.filterAgeMin;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? peer.filterAgeMax;
         peer.filterCity = (msg.filterCity as string) ?? peer.filterCity;
         waiting.set(peerId, peer);
         sendTo(peer, { type: "waiting", peerId });
-
         const match2 = findMatch(peer);
         if (match2) {
           waiting.delete(peerId);
@@ -154,7 +181,6 @@ wss.on("connection", (ws) => {
         }
         break;
       }
-
       case "offer":
       case "answer":
       case "ice-candidate": {
@@ -164,9 +190,78 @@ wss.on("connection", (ws) => {
         }
         break;
       }
-
       case "leave": {
         disconnectPeer(peer);
+        break;
+      }
+
+      // ---- Live streaming ----
+      case "join-live": {
+        const liveId = msg.liveId as number;
+        const role = msg.role as "host" | "viewer";
+        peer.userId = msg.userId as number;
+        peer.name = msg.name as string;
+
+        if (role === "host") {
+          const existing = liveRooms.get(liveId);
+          if (existing) {
+            existing.viewerPeerIds.forEach((vId) => {
+              const viewer = allPeers.get(vId);
+              if (viewer) sendTo(viewer, { type: "live-ended" });
+              peerLiveRole.delete(vId);
+            });
+          }
+          liveRooms.set(liveId, { hostPeerId: peerId, viewerPeerIds: new Set() });
+          peerLiveRole.set(peerId, { liveId, role: "host" });
+          sendTo(peer, { type: "live-joined", liveId, peerId, role: "host" });
+        } else {
+          const room = liveRooms.get(liveId);
+          if (!room) {
+            sendTo(peer, { type: "live-error", error: "Live nie istnieje" });
+            break;
+          }
+          room.viewerPeerIds.add(peerId);
+          peerLiveRole.set(peerId, { liveId, role: "viewer" });
+          sendTo(peer, { type: "live-joined", liveId, peerId, role: "viewer" });
+          const hostPeer = allPeers.get(room.hostPeerId);
+          if (hostPeer) {
+            sendTo(hostPeer, { type: "viewer-joined", viewerPeerId: peerId, viewerName: peer.name });
+          }
+        }
+        break;
+      }
+
+      case "live-offer": {
+        const targetPeerId = msg.targetPeerId as string;
+        const target = allPeers.get(targetPeerId);
+        if (target) sendTo(target, { type: "live-offer", offer: msg.offer, fromPeerId: peerId });
+        break;
+      }
+
+      case "live-answer": {
+        const targetPeerId = msg.targetPeerId as string;
+        const target = allPeers.get(targetPeerId);
+        if (target) sendTo(target, { type: "live-answer", answer: msg.answer, fromPeerId: peerId });
+        break;
+      }
+
+      case "live-ice": {
+        const targetPeerId = msg.targetPeerId as string;
+        const target = allPeers.get(targetPeerId);
+        if (target) sendTo(target, { type: "live-ice", candidate: msg.candidate, fromPeerId: peerId });
+        break;
+      }
+
+      case "leave-live": {
+        cleanupLivePeer(peer);
+        break;
+      }
+
+      case "end-live": {
+        const liveInfo = peerLiveRole.get(peerId);
+        if (liveInfo && liveInfo.role === "host") {
+          cleanupLivePeer(peer);
+        }
         break;
       }
     }
@@ -178,7 +273,6 @@ wss.on("connection", (ws) => {
   sendTo(peer, { type: "connected", peerId });
 });
 
-// ---- Start ----
 server.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });

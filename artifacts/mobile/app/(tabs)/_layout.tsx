@@ -54,10 +54,10 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Odkryj", tabBarIcon: ({ color }) => <Feather name="zap" size={22} color={color} /> }} />
       <Tabs.Screen name="likes" options={{ title: "Lajki", tabBarIcon: ({ color }) => <Feather name="heart" size={22} color={color} /> }} />
+      <Tabs.Screen name="video" options={{ title: "Losowy", tabBarIcon: ({ color }) => <Feather name="video" size={22} color={color} /> }} />
       <Tabs.Screen name="lives" options={{ title: "Live", tabBarIcon: ({ color }) => <Feather name="radio" size={22} color={color} /> }} />
-      <Tabs.Screen name="messages" options={{ title: "Wiadomości", tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} /> }} />
+      <Tabs.Screen name="messages" options={{ title: "Czat", tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Profil", tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }} />
-      <Tabs.Screen name="video" options={{ href: null }} />
     </Tabs>
   );
 }

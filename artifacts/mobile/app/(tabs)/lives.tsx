@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut, useSharedValue, useAnimatedStyle, withTiming, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
@@ -25,6 +25,13 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
   : `ws://localhost:8080/ws`;
 
+const GIFTS = [
+  { id: "heart", emoji: "❤️", label: "Serduszko", cost: 10 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 25 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 50 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 100 },
+];
+
 interface LiveHost {
   id: number;
   name: string;
@@ -32,6 +39,7 @@ interface LiveHost {
   photoUrl: string;
   age: number;
   city?: string;
+  isVerified?: boolean;
 }
 
 interface Live {
@@ -40,6 +48,12 @@ interface Live {
   viewerCount: number;
   createdAt?: string;
   host: LiveHost;
+}
+
+interface FloatingGift {
+  id: string;
+  emoji: string;
+  x: number;
 }
 
 function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: (live: Live) => void }) {
@@ -64,6 +78,11 @@ function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: 
             <Text style={styles.liveHostName}>
               {live.host.name}{live.host.username ? ` @${live.host.username}` : ""}
             </Text>
+            {live.host.isVerified && (
+              <View style={styles.verifiedBadge}>
+                <Feather name="check" size={8} color="#fff" />
+              </View>
+            )}
           </View>
           {live.host.city ? (
             <View style={styles.locationRow}>
@@ -80,6 +99,29 @@ function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: 
   );
 }
 
+function GiftPanel({ onSend, coins, disabled }: { onSend: (gift: typeof GIFTS[0]) => void; coins: number; disabled: boolean }) {
+  return (
+    <View style={styles.giftPanel}>
+      <View style={styles.giftCoinsRow}>
+        <Text style={styles.giftCoinsLabel}>💰 {coins} monet</Text>
+      </View>
+      <View style={styles.giftRow}>
+        {GIFTS.map(gift => (
+          <Pressable
+            key={gift.id}
+            style={[styles.giftBtn, (disabled || coins < gift.cost) && styles.giftBtnDisabled]}
+            onPress={() => onSend(gift)}
+            disabled={disabled || coins < gift.cost}
+          >
+            <Text style={styles.giftEmoji}>{gift.emoji}</Text>
+            <Text style={styles.giftCost}>{gift.cost}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function LiveViewerModal({ live, visible, onClose, currentUser }: {
   live: Live | null;
   visible: boolean;
@@ -88,58 +130,115 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 }) {
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const myPeerIdRef = useRef<string>("");
   const [connected, setConnected] = useState(false);
   const [addedFriend, setAddedFriend] = useState(false);
+  const [showGifts, setShowGifts] = useState(false);
+  const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
+  const [coins, setCoins] = useState(200);
   const queryClient = useQueryClient();
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-    const container = document.getElementById("vibe-live-remote");
-    if (container) container.innerHTML = "";
+    if (Platform.OS === "web") {
+      const container = document.getElementById("vibe-live-remote");
+      if (container) container.innerHTML = "";
+    }
     setConnected(false);
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: -1 }) }).catch(() => {});
     }
-  };
+  }, [live]);
 
   useEffect(() => {
-    if (!visible || !live || Platform.OS !== "web") return;
+    if (!visible || !live) return;
+    if (Platform.OS !== "web") return;
+
     fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: 1 }) }).catch(() => {});
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
+
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "join-live", liveId: live.id, userId: currentUser?.id, name: currentUser?.name, role: "viewer" }));
     };
+
     ws.onmessage = async (event) => {
       const msg = JSON.parse(event.data);
+
+      if (msg.type === "connected") {
+        myPeerIdRef.current = msg.peerId;
+      }
+
+      if (msg.type === "live-joined") {
+        // Viewer joined, waiting for host offer
+      }
+
       if (msg.type === "live-offer") {
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] });
         pcRef.current = pc;
+
         pc.ontrack = (e) => {
           const container = document.getElementById("vibe-live-remote");
           if (container) {
-            let v = container.querySelector("video") as HTMLVideoElement;
-            if (!v) { v = document.createElement("video"); v.autoplay = true; v.playsInline = true; v.style.cssText = "width:100%;height:100%;object-fit:cover;"; container.appendChild(v); }
+            let v = container.querySelector("video") as HTMLVideoElement | null;
+            if (!v) {
+              v = document.createElement("video");
+              v.autoplay = true;
+              v.playsInline = true;
+              v.style.cssText = "width:100%;height:100%;object-fit:cover;";
+              container.appendChild(v);
+            }
             v.srcObject = e.streams[0];
             setConnected(true);
           }
         };
-        pc.onicecandidate = (e) => { if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, role: "viewer" })); };
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
+          }
+        };
+
         await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: "live-answer", answer, liveId: live.id }));
+        ws.send(JSON.stringify({ type: "live-answer", answer, targetPeerId: msg.fromPeerId }));
       }
-      if (msg.type === "live-ice-from-host" && pcRef.current) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate));
+
+      if (msg.type === "live-ice" && pcRef.current) {
+        try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
       }
-      if (msg.type === "live-ended") { cleanup(); onClose(); }
+
+      if (msg.type === "live-error") {
+        Alert.alert("Błąd", msg.error || "Nie można dołączyć do live'a");
+        cleanup();
+        onClose();
+      }
+
+      if (msg.type === "live-ended") {
+        Alert.alert("Live zakończony", "Gospodarz zakończył transmisję.");
+        cleanup();
+        onClose();
+      }
     };
+
     ws.onclose = () => { setConnected(false); };
+    ws.onerror = () => { setConnected(false); };
+
     return () => { cleanup(); };
   }, [visible, live]);
+
+  const handleSendGift = useCallback((gift: typeof GIFTS[0]) => {
+    if (coins < gift.cost) return;
+    setCoins(c => c - gift.cost);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const id = Math.random().toString(36).slice(2);
+    const x = Math.random() * 60 + 10;
+    setFloatingGifts(prev => [...prev, { id, emoji: gift.emoji, x }]);
+    setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== id)), 3000);
+  }, [coins]);
 
   const handleAddFriend = async () => {
     if (!currentUser || !live) return;
@@ -158,13 +257,29 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
       <View style={styles.liveViewerContainer}>
-        <View nativeID="vibe-live-remote" style={styles.liveVideoFill} />
-        {!connected && (
+        {Platform.OS === "web" ? (
+          <View nativeID="vibe-live-remote" style={styles.liveVideoFill} />
+        ) : (
+          <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
+            <Feather name="monitor" size={48} color={Colors.textMuted} />
+            <Text style={styles.nativePlaceholderText}>Live dostępny w wersji web</Text>
+          </View>
+        )}
+
+        {Platform.OS === "web" && !connected && (
           <View style={styles.liveConnectingOverlay}>
             <ActivityIndicator color={Colors.accent} size="large" />
             <Text style={styles.liveConnectingText}>Łączę z live...</Text>
           </View>
         )}
+
+        {/* Floating gifts */}
+        {floatingGifts.map(g => (
+          <Animated.View key={g.id} entering={FadeInDown.springify()} exiting={FadeOut} style={[styles.floatingGift, { left: `${g.x}%` as any }]}>
+            <Text style={styles.floatingGiftText}>{g.emoji}</Text>
+          </Animated.View>
+        ))}
+
         {live && (
           <View style={styles.liveViewerHeader}>
             <Pressable style={styles.liveViewerClose} onPress={() => { cleanup(); onClose(); }}>
@@ -173,7 +288,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             <View style={styles.liveViewerHostInfo}>
               <Image source={{ uri: live.host.photoUrl }} style={styles.liveViewerHostAvatar} />
               <View>
-                <Text style={styles.liveViewerHostName}>{live.host.name}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Text style={styles.liveViewerHostName}>{live.host.name}</Text>
+                  {live.host.isVerified && <View style={styles.verifiedBadgeSm}><Feather name="check" size={8} color="#fff" /></View>}
+                </View>
                 <Text style={styles.liveViewerTitle}>{live.title}</Text>
               </View>
             </View>
@@ -183,6 +301,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             </View>
           </View>
         )}
+
         <View style={styles.liveViewerActions}>
           <Pressable
             style={[styles.addFriendBtn, addedFriend && styles.addFriendBtnDone]}
@@ -193,6 +312,147 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             <Text style={[styles.addFriendBtnText, addedFriend && { color: Colors.black }]}>
               {addedFriend ? "Zaproszono!" : "Dodaj znajomego"}
             </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.giftToggleBtn}
+            onPress={() => { setShowGifts(s => !s); Haptics.selectionAsync(); }}
+          >
+            <Text style={{ fontSize: 18 }}>🎁</Text>
+          </Pressable>
+        </View>
+
+        {showGifts && (
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.giftPanelWrap}>
+            <GiftPanel onSend={handleSendGift} coins={coins} disabled={false} />
+          </Animated.View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; title: string } | null; visible: boolean; onClose: () => void }) {
+  const wsRef = useRef<WebSocket | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const viewerPcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const myPeerIdRef = useRef<string>("");
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [viewerCount, setViewerCount] = useState(0);
+  const queryClient = useQueryClient();
+
+  const cleanup = useCallback(() => {
+    viewerPcsRef.current.forEach(pc => pc.close());
+    viewerPcsRef.current.clear();
+    if (wsRef.current) { wsRef.current.send(JSON.stringify({ type: "end-live" })); wsRef.current.close(); wsRef.current = null; }
+    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
+    if (Platform.OS === "web") {
+      const c = document.getElementById("vibe-host-video");
+      if (c) c.innerHTML = "";
+    }
+    if (live) {
+      fetch(`${BASE_URL}/lives/${live.id}/end`, { method: "PATCH" }).catch(() => {});
+    }
+    setBroadcasting(false);
+    setViewerCount(0);
+    queryClient.invalidateQueries({ queryKey: ["lives"] });
+  }, [live]);
+
+  useEffect(() => {
+    if (!visible || !live || Platform.OS !== "web") return;
+
+    const startBroadcast = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStreamRef.current = stream;
+        const c = document.getElementById("vibe-host-video");
+        if (c) {
+          c.innerHTML = "";
+          const v = document.createElement("video");
+          v.autoplay = true; v.muted = true; v.playsInline = true;
+          v.style.cssText = "width:100%;height:100%;object-fit:cover;";
+          v.srcObject = stream;
+          c.appendChild(v);
+        }
+        setBroadcasting(true);
+        const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: "join-live", liveId: live.id, role: "host" }));
+        };
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "connected") { myPeerIdRef.current = msg.peerId; }
+          if (msg.type === "viewer-joined") {
+            const viewerPeerId = msg.viewerPeerId as string;
+            setViewerCount(c => c + 1);
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            viewerPcsRef.current.set(viewerPeerId, pc);
+            localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
+            pc.onicecandidate = (e) => {
+              if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: viewerPeerId }));
+            };
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: "live-offer", offer, targetPeerId: viewerPeerId }));
+          }
+          if (msg.type === "live-answer") {
+            const pc = viewerPcsRef.current.get(msg.fromPeerId);
+            if (pc) { try { await pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); } catch {} }
+          }
+          if (msg.type === "live-ice") {
+            const pc = viewerPcsRef.current.get(msg.fromPeerId);
+            if (pc) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {} }
+          }
+          if (msg.type === "viewer-left") {
+            const pc = viewerPcsRef.current.get(msg.viewerPeerId);
+            if (pc) { pc.close(); viewerPcsRef.current.delete(msg.viewerPeerId); }
+            setViewerCount(c => Math.max(0, c - 1));
+          }
+        };
+        ws.onclose = () => setBroadcasting(false);
+      } catch (e: unknown) {
+        const err = e as Error;
+        Alert.alert("Błąd kamery", err.name === "NotAllowedError" ? "Zezwól na dostęp do kamery." : "Nie udało się uruchomić kamery.");
+        onClose();
+      }
+    };
+
+    startBroadcast();
+    return () => { cleanup(); };
+  }, [visible, live]);
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
+      <View style={styles.liveViewerContainer}>
+        {Platform.OS === "web" ? (
+          <View nativeID="vibe-host-video" style={styles.liveVideoFill} />
+        ) : (
+          <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
+            <Feather name="monitor" size={48} color={Colors.textMuted} />
+            <Text style={styles.nativePlaceholderText}>Streaming dostępny w wersji web</Text>
+          </View>
+        )}
+
+        <View style={styles.liveViewerHeader}>
+          <View style={styles.liveBroadcastBadge}>
+            {broadcasting && <View style={styles.liveDot} />}
+            <Text style={styles.liveBadgeText}>{broadcasting ? "LIVE" : "Łączę..."}</Text>
+          </View>
+          <View style={{ flex: 1 }} />
+          <View style={styles.liveViewerCount}>
+            <Feather name="eye" size={13} color={Colors.textPrimary} />
+            <Text style={styles.liveViewerCountText}>{viewerCount}</Text>
+          </View>
+        </View>
+
+        <View style={styles.liveViewerActions}>
+          <Pressable
+            style={[styles.endLiveBtn]}
+            onPress={() => { cleanup(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
+          >
+            <Feather name="x-circle" size={18} color="#fff" />
+            <Text style={styles.endLiveBtnText}>Zakończ live</Text>
           </Pressable>
         </View>
       </View>
@@ -210,7 +470,7 @@ function StartLiveModal({ visible, onClose, onStart }: { visible: boolean; onClo
             <Feather name="x" size={20} color={Colors.textSecondary} />
           </Pressable>
           <View style={styles.startLiveIconWrap}>
-            <Feather name="radio" size={28} color={Colors.black} />
+            <Feather name="radio" size={28} color="#fff" />
           </View>
           <Text style={styles.startLiveTitle}>Zacznij Live</Text>
           <Text style={styles.startLiveSub}>Inni zobaczą Twoje wideo na żywo i mogą Cię dodać do znajomych.</Text>
@@ -227,7 +487,7 @@ function StartLiveModal({ visible, onClose, onStart }: { visible: boolean; onClo
             onPress={() => { if (title.trim()) { onStart(title.trim()); onClose(); } }}
             disabled={!title.trim()}
           >
-            <Feather name="radio" size={16} color={Colors.black} />
+            <Feather name="radio" size={16} color="#fff" />
             <Text style={styles.startLiveBtnText}>Idź na żywo</Text>
           </Pressable>
         </Animated.View>
@@ -243,15 +503,18 @@ export default function LivesScreen() {
   const [selectedLive, setSelectedLive] = useState<Live | null>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
+  const [activeLive, setActiveLive] = useState<{ id: number; title: string } | null>(null);
+  const [broadcastVisible, setBroadcastVisible] = useState(false);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
   const { data: lives = [], isLoading } = useQuery<Live[]>({
     queryKey: ["lives"],
     queryFn: async () => {
       const res = await fetch(`${BASE_URL}/lives`);
+      if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 15000,
+    refetchInterval: 10000,
   });
 
   const startLiveMutation = useMutation({
@@ -263,9 +526,11 @@ export default function LivesScreen() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["lives"] });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setActiveLive({ id: data.id, title: data.title });
+      setBroadcastVisible(true);
     },
   });
 
@@ -283,7 +548,7 @@ export default function LivesScreen() {
           style={styles.startBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowStartModal(true); }}
         >
-          <Feather name="radio" size={14} color={Colors.black} />
+          <Feather name="radio" size={14} color="#fff" />
           <Text style={styles.startBtnText}>Idź live</Text>
         </Pressable>
       </View>
@@ -298,7 +563,7 @@ export default function LivesScreen() {
           <Text style={styles.emptyTitle}>Brak live'ów</Text>
           <Text style={styles.emptyText}>Bądź pierwszy! Zacznij swój live.</Text>
           <Pressable style={styles.startEmptyBtn} onPress={() => setShowStartModal(true)}>
-            <Feather name="radio" size={16} color={Colors.black} />
+            <Feather name="radio" size={16} color="#fff" />
             <Text style={styles.startEmptyBtnText}>Zacznij live</Text>
           </Pressable>
         </View>
@@ -321,6 +586,12 @@ export default function LivesScreen() {
         currentUser={currentUser}
       />
 
+      <HostBroadcastModal
+        live={activeLive}
+        visible={broadcastVisible}
+        onClose={() => { setBroadcastVisible(false); setActiveLive(null); }}
+      />
+
       <StartLiveModal
         visible={showStartModal}
         onClose={() => setShowStartModal(false)}
@@ -334,13 +605,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
-  startBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  startBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.black },
+  startBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  startBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff" },
   list: { paddingHorizontal: 16, gap: 12, paddingTop: 4 },
-  liveCard: { backgroundColor: Colors.cardBg, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, overflow: "hidden", flexDirection: "row", alignItems: "center", gap: 0 },
+  liveCard: { backgroundColor: Colors.cardBg, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, overflow: "hidden", flexDirection: "row", alignItems: "center" },
   liveThumb: { width: 100, height: 90, position: "relative" },
   liveThumbImg: { width: "100%", height: "100%", resizeMode: "cover" },
   liveBadge: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.danger, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
+  liveBroadcastBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#fff" },
   liveBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: "#fff", letterSpacing: 1 },
   liveViewers: { position: "absolute", bottom: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
@@ -357,10 +629,12 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
   emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
-  startEmptyBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, marginTop: 8 },
-  startEmptyBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.black },
+  startEmptyBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, marginTop: 8 },
+  startEmptyBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
   liveViewerContainer: { flex: 1, backgroundColor: "#000" },
   liveVideoFill: { flex: 1, backgroundColor: "#0a0a0a" },
+  nativePlaceholder: { alignItems: "center", justifyContent: "center", gap: 12 },
+  nativePlaceholderText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
   liveConnectingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.8)", gap: 16 },
   liveConnectingText: { fontFamily: "Montserrat_600SemiBold", fontSize: 16, color: Colors.textPrimary },
   liveViewerHeader: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, backgroundColor: "rgba(0,0,0,0.5)", gap: 12 },
@@ -372,10 +646,24 @@ const styles = StyleSheet.create({
   liveViewerCount: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   liveDotSmall: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.danger },
   liveViewerCountText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.textPrimary },
-  liveViewerActions: { position: "absolute", bottom: 40, left: 0, right: 0, alignItems: "center" },
+  liveViewerActions: { position: "absolute", bottom: 40, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 20 },
   addFriendBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
   addFriendBtnDone: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   addFriendBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textPrimary },
+  giftToggleBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  giftPanelWrap: { position: "absolute", bottom: 100, left: 16, right: 16 },
+  giftPanel: { backgroundColor: "rgba(20,20,20,0.95)", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border, gap: 10 },
+  giftCoinsRow: { alignItems: "flex-end" },
+  giftCoinsLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.accent },
+  giftRow: { flexDirection: "row", justifyContent: "space-around" },
+  giftBtn: { alignItems: "center", gap: 4, padding: 10 },
+  giftBtnDisabled: { opacity: 0.4 },
+  giftEmoji: { fontSize: 28 },
+  giftCost: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textSecondary },
+  floatingGift: { position: "absolute", bottom: 160, zIndex: 100 },
+  floatingGiftText: { fontSize: 36 },
+  endLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
+  endLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
   startLiveOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   startLiveBox: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, paddingBottom: 44, borderTopWidth: 1, borderColor: Colors.border, gap: 14, alignItems: "center" },
   startLiveClose: { position: "absolute", top: 16, right: 20, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
@@ -385,4 +673,6 @@ const styles = StyleSheet.create({
   startLiveInput: { width: "100%", backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 16, paddingVertical: 13, fontFamily: "Montserrat_500Medium", fontSize: 15, color: Colors.textPrimary },
   startLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 28, paddingVertical: 15, borderRadius: 14, width: "100%", justifyContent: "center" },
   startLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: "#fff" },
+  verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
+  verifiedBadgeSm: { width: 14, height: 14, borderRadius: 7, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
 });
