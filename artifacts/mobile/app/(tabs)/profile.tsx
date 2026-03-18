@@ -307,6 +307,19 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* Shop button */}
+      <Pressable
+        style={styles.shopBtn}
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/shop"); }}
+      >
+        <Text style={styles.shopBtnIcon}>💰</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.shopBtnText}>Sklep monet</Text>
+          <Text style={styles.shopBtnSub}>Kup monety i wysyłaj gifty na live</Text>
+        </View>
+        <Feather name="chevron-right" size={18} color={Colors.accent} />
+      </Pressable>
+
       {/* XP bar */}
       <View style={styles.xpSection}>
         <View style={styles.xpRow}>
@@ -557,5 +570,9 @@ const styles = StyleSheet.create({
   premiumCardPrice: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.black },
   devBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13 },
   devBtnDanger: { borderColor: "rgba(255,59,92,0.3)" },
+  shopBtn: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: "rgba(204,255,0,0.2)", padding: 14, marginHorizontal: 16 },
+  shopBtnIcon: { fontSize: 28 },
+  shopBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary },
+  shopBtnSub: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textSecondary },
   devBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.accent },
 });

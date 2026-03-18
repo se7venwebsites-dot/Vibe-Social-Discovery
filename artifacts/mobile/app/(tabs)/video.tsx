@@ -22,6 +22,15 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
 
 const CITIES_OPTIONS = ["all", "Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
 
+const CAM_FILTERS = [
+  { id: "none", label: "Normalny", css: "" },
+  { id: "bw", label: "B&W", css: "grayscale(100%)" },
+  { id: "sepia", label: "Sepia", css: "sepia(80%)" },
+  { id: "cool", label: "Chłodny", css: "hue-rotate(180deg) saturate(120%)" },
+  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(105%)" },
+  { id: "vivid", label: "Żywy", css: "saturate(200%) contrast(110%)" },
+];
+
 type Status = "idle" | "requesting-camera" | "waiting" | "connected" | "error";
 
 interface PartnerInfo {
@@ -62,6 +71,19 @@ export default function VideoScreen() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const isInitiatorRef = useRef(false);
+  const [activeCamFilter, setActiveCamFilter] = useState("none");
+  const [showCamFilters, setShowCamFilters] = useState(false);
+
+  const applyFilter = useCallback((filterId: string) => {
+    setActiveCamFilter(filterId);
+    if (Platform.OS !== "web") return;
+    const container = document.getElementById("vibe-local-video");
+    const video = container?.querySelector("video") as HTMLVideoElement | null;
+    if (video) {
+      const filter = CAM_FILTERS.find(f => f.id === filterId);
+      video.style.filter = filter?.css || "";
+    }
+  }, []);
 
   const setupWebRTC = useCallback(async (initiator: boolean, ws: WebSocket) => {
     if (Platform.OS !== "web") return;
@@ -397,24 +419,48 @@ export default function VideoScreen() {
       </View>
 
       {(status === "waiting" || status === "connected") && (
-        <Animated.View entering={FadeInDown} style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}>
-          <Pressable
-            style={({ pressed }) => [styles.ctrlBtn, styles.ctrlBtnDanger, pressed && { opacity: 0.8 }]}
-            onPress={handleDisconnect}
-          >
-            <Feather name="phone-off" size={24} color={Colors.danger} />
-          </Pressable>
-
-          {status === "connected" ? (
+        <>
+          {showCamFilters && Platform.OS === "web" && (
+            <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filterBar}>
+              {CAM_FILTERS.map(f => (
+                <Pressable
+                  key={f.id}
+                  style={[styles.filterTag, activeCamFilter === f.id && styles.filterTagActive]}
+                  onPress={() => { applyFilter(f.id); Haptics.selectionAsync(); }}
+                >
+                  <Text style={[styles.filterTagText, activeCamFilter === f.id && styles.filterTagTextActive]}>{f.label}</Text>
+                </Pressable>
+              ))}
+            </Animated.View>
+          )}
+          <Animated.View entering={FadeInDown} style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}>
             <Pressable
-              style={({ pressed }) => [styles.ctrlBtn, styles.ctrlBtnNext, pressed && { opacity: 0.8 }]}
-              onPress={handleNext}
+              style={({ pressed }) => [styles.ctrlBtn, styles.ctrlBtnDanger, pressed && { opacity: 0.8 }]}
+              onPress={handleDisconnect}
             >
-              <Feather name="skip-forward" size={22} color={Colors.accent} />
-              <Text style={styles.ctrlBtnNextText}>Następna osoba</Text>
+              <Feather name="phone-off" size={24} color={Colors.danger} />
             </Pressable>
-          ) : null}
-        </Animated.View>
+
+            {status === "connected" && Platform.OS === "web" ? (
+              <Pressable
+                style={({ pressed }) => [styles.ctrlBtn, showCamFilters && styles.ctrlBtnFilterActive, pressed && { opacity: 0.8 }]}
+                onPress={() => { setShowCamFilters(s => !s); Haptics.selectionAsync(); }}
+              >
+                <Feather name="sliders" size={22} color={showCamFilters ? Colors.black : Colors.accent} />
+              </Pressable>
+            ) : null}
+
+            {status === "connected" ? (
+              <Pressable
+                style={({ pressed }) => [styles.ctrlBtn, styles.ctrlBtnNext, pressed && { opacity: 0.8 }]}
+                onPress={handleNext}
+              >
+                <Feather name="skip-forward" size={22} color={Colors.accent} />
+                <Text style={styles.ctrlBtnNextText}>Następna osoba</Text>
+              </Pressable>
+            ) : null}
+          </Animated.View>
+        </>
       )}
     </View>
   );
@@ -577,6 +623,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardBg,
   },
   localVideoInner: { flex: 1 },
+  filterBar: {
+    position: "absolute",
+    bottom: 80,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    zIndex: 50,
+  },
+  filterTag: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  filterTagActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  filterTagText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textSecondary },
+  filterTagTextActive: { color: Colors.black },
   controls: {
     position: "absolute",
     bottom: 0,
@@ -601,6 +666,10 @@ const styles = StyleSheet.create({
   ctrlBtnDanger: {
     borderColor: Colors.danger,
     backgroundColor: "rgba(255,59,92,0.1)",
+  },
+  ctrlBtnFilterActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
   },
   ctrlBtnNext: {
     flexDirection: "row",

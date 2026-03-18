@@ -9,6 +9,7 @@ import {
   PanResponder,
   ActivityIndicator,
   Platform,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -19,6 +20,7 @@ import Animated, {
   runOnJS,
   interpolate,
   FadeIn,
+  ZoomIn,
 } from "react-native-reanimated";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -178,6 +180,7 @@ export default function DiscoverScreen() {
   const { currentUser, isPremium, activatePremium } = useUserContext();
   const [showPremium, setShowPremium] = useState(false);
   const [cardStack, setCardStack] = useState<User[]>([]);
+  const [matchUser, setMatchUser] = useState<User | null>(null);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
   const { data: usersData, isLoading, refetch } = useQuery<User[]>({
@@ -210,11 +213,20 @@ export default function DiscoverScreen() {
     Haptics.impactAsync(dir === "right" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
 
     if (dir === "right") {
-      fetch(`${BASE_URL}/likes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromUserId: currentUser.id, toUserId: topUser.id, action: "like" }),
-      }).catch(() => {});
+      try {
+        const res = await fetch(`${BASE_URL}/likes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fromUserId: currentUser.id, toUserId: topUser.id, action: "like" }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isMatch) {
+            setMatchUser(topUser);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        }
+      } catch {}
     }
 
     setCardStack(prev => {
@@ -291,6 +303,38 @@ export default function DiscoverScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
+
+      <Modal visible={!!matchUser} transparent animationType="fade" onRequestClose={() => setMatchUser(null)}>
+        <View style={styles.matchOverlay}>
+          <Animated.View entering={ZoomIn.springify()} style={styles.matchModal}>
+            <Text style={styles.matchFireworks}>🎉</Text>
+            <Text style={styles.matchTitle}>To jest MATCH!</Text>
+            <Text style={styles.matchSub}>Ty i {matchUser?.name} polubiliście się nawzajem</Text>
+            {matchUser && (
+              <View style={styles.matchAvatars}>
+                <View style={styles.matchAvatarWrap}>
+                  <Image source={{ uri: currentUser?.photoUrl }} style={styles.matchAvatar} />
+                </View>
+                <View style={styles.matchHeartWrap}>
+                  <Text style={styles.matchHeart}>❤️</Text>
+                </View>
+                <View style={styles.matchAvatarWrap}>
+                  <Image source={{ uri: matchUser.photoUrl }} style={styles.matchAvatar} />
+                </View>
+              </View>
+            )}
+            <View style={styles.matchButtons}>
+              <Pressable style={styles.matchMsgBtn} onPress={() => setMatchUser(null)}>
+                <Feather name="message-circle" size={18} color={Colors.black} />
+                <Text style={styles.matchMsgBtnText}>Napisz wiadomość</Text>
+              </Pressable>
+              <Pressable style={styles.matchSkipBtn} onPress={() => setMatchUser(null)}>
+                <Text style={styles.matchSkipBtnText}>Może później</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -390,4 +434,19 @@ const styles = StyleSheet.create({
   emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 15, color: Colors.textSecondary, textAlign: "center" },
   refreshBtn: { marginTop: 8, backgroundColor: Colors.surface, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   refreshBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.accent },
+  matchOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", padding: 24 },
+  matchModal: { width: "100%", maxWidth: 380, backgroundColor: Colors.cardBg, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: "rgba(204,255,0,0.3)", gap: 12 },
+  matchFireworks: { fontSize: 48 },
+  matchTitle: { fontFamily: "Montserrat_700Bold", fontSize: 32, color: Colors.accent, textAlign: "center" },
+  matchSub: { fontFamily: "Montserrat_400Regular", fontSize: 15, color: Colors.textSecondary, textAlign: "center" },
+  matchAvatars: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 8 },
+  matchAvatarWrap: { shadowColor: Colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12 },
+  matchAvatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: Colors.accent },
+  matchHeartWrap: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  matchHeart: { fontSize: 32 },
+  matchButtons: { width: "100%", gap: 10, marginTop: 8 },
+  matchMsgBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: Colors.accent, borderRadius: 16, paddingVertical: 16 },
+  matchMsgBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
+  matchSkipBtn: { alignItems: "center", paddingVertical: 12 },
+  matchSkipBtnText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted },
 });

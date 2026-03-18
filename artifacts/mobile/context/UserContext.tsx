@@ -26,6 +26,8 @@ export interface UserProfile {
   isPremium: boolean;
   city?: string;
   interests?: string[];
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface UserContextType {
@@ -33,7 +35,8 @@ interface UserContextType {
   isRegistered: boolean;
   isLoadingAuth: boolean;
   isPremium: boolean;
-  register: (data: Omit<UserProfile, "id" | "isPremium">) => Promise<void>;
+  register: (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string }) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   updateProfile: (data: Partial<Omit<UserProfile, "id" | "isPremium">>) => Promise<void>;
   activatePremium: () => Promise<void>;
   devReset: () => Promise<void>;
@@ -67,21 +70,39 @@ export function UserProvider({ children }: { children: ReactNode }) {
     load();
   }, []);
 
-  const register = useCallback(async (data: Omit<UserProfile, "id" | "isPremium">) => {
-    const res = await fetch(`${BASE_URL}/users/register`, {
+  const register = useCallback(async (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string }) => {
+    const endpoint = data.password ? `${BASE_URL}/auth/register` : `${BASE_URL}/users/register`;
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Registration failed");
+      throw new Error(err.error || "Rejestracja nieudana");
     }
     const user: UserProfile = await res.json();
     setCurrentUser(user);
     setIsPremium(false);
     await AsyncStorage.setItem(USER_ID_KEY, String(user.id));
     await AsyncStorage.removeItem(IS_PREMIUM_KEY);
+  }, []);
+
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await fetch(`${BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Logowanie nieudane");
+    }
+    const user: UserProfile = await res.json();
+    setCurrentUser(user);
+    setIsPremium(user.isPremium);
+    await AsyncStorage.setItem(USER_ID_KEY, String(user.id));
+    if (user.isPremium) await AsyncStorage.setItem(IS_PREMIUM_KEY, "true");
   }, []);
 
   const updateProfile = useCallback(async (data: Partial<Omit<UserProfile, "id" | "isPremium">>) => {
@@ -93,7 +114,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Update failed");
+      throw new Error(err.error || "Aktualizacja nieudana");
     }
     const updated: UserProfile = await res.json();
     setCurrentUser(updated);
@@ -130,6 +151,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       isLoadingAuth,
       isPremium,
       register,
+      login,
       updateProfile,
       activatePremium,
       devReset,

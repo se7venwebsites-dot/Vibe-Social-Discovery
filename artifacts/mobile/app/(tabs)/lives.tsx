@@ -26,10 +26,23 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   : `ws://localhost:8080/ws`;
 
 const GIFTS = [
-  { id: "heart", emoji: "❤️", label: "Serduszko", cost: 10 },
-  { id: "fire", emoji: "🔥", label: "Ogień", cost: 25 },
-  { id: "diamond", emoji: "💎", label: "Diament", cost: 50 },
-  { id: "crown", emoji: "👑", label: "Korona", cost: 100 },
+  { id: "heart", emoji: "❤️", label: "Serce", cost: 10, size: 34 },
+  { id: "rose", emoji: "🌹", label: "Róża", cost: 15, size: 34 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 25, size: 34 },
+  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 30, size: 36 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 50, size: 38 },
+  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 75, size: 38 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 100, size: 40 },
+  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 200, size: 42 },
+];
+
+const CAM_FILTERS = [
+  { id: "none", label: "Normal", css: "" },
+  { id: "bw", label: "B&W", css: "grayscale(100%)" },
+  { id: "sepia", label: "Sepia", css: "sepia(80%)" },
+  { id: "cool", label: "Chłodny", css: "hue-rotate(180deg) saturate(120%)" },
+  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(105%)" },
+  { id: "vivid", label: "Żywy", css: "saturate(200%) contrast(110%)" },
 ];
 
 interface LiveHost {
@@ -104,19 +117,27 @@ function GiftPanel({ onSend, coins, disabled }: { onSend: (gift: typeof GIFTS[0]
     <View style={styles.giftPanel}>
       <View style={styles.giftCoinsRow}>
         <Text style={styles.giftCoinsLabel}>💰 {coins} monet</Text>
+        <Text style={styles.giftCoinsHint}>Dotknij, żeby wysłać</Text>
       </View>
-      <View style={styles.giftRow}>
-        {GIFTS.map(gift => (
-          <Pressable
-            key={gift.id}
-            style={[styles.giftBtn, (disabled || coins < gift.cost) && styles.giftBtnDisabled]}
-            onPress={() => onSend(gift)}
-            disabled={disabled || coins < gift.cost}
-          >
-            <Text style={styles.giftEmoji}>{gift.emoji}</Text>
-            <Text style={styles.giftCost}>{gift.cost}</Text>
-          </Pressable>
-        ))}
+      <View style={styles.giftGrid}>
+        {GIFTS.map(gift => {
+          const canAfford = coins >= gift.cost;
+          return (
+            <Pressable
+              key={gift.id}
+              style={[styles.giftBtn, (!canAfford || disabled) && styles.giftBtnDisabled]}
+              onPress={() => onSend(gift)}
+              disabled={disabled || !canAfford}
+            >
+              <Text style={{ fontSize: gift.size }}>{gift.emoji}</Text>
+              <Text style={styles.giftLabel}>{gift.label}</Text>
+              <View style={styles.giftCostRow}>
+                <Text style={styles.giftCostIcon}>💰</Text>
+                <Text style={[styles.giftCost, !canAfford && { color: Colors.textMuted }]}>{gift.cost}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -339,7 +360,20 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const myPeerIdRef = useRef<string>("");
   const [broadcasting, setBroadcasting] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
+  const [activeFilter, setActiveFilter] = useState("none");
+  const [showFilters, setShowFilters] = useState(false);
   const queryClient = useQueryClient();
+
+  const applyFilter = useCallback((filterId: string) => {
+    setActiveFilter(filterId);
+    if (Platform.OS !== "web") return;
+    const container = document.getElementById("vibe-host-video");
+    const video = container?.querySelector("video") as HTMLVideoElement | null;
+    if (video) {
+      const filter = CAM_FILTERS.find(f => f.id === filterId);
+      video.style.filter = filter?.css || "";
+    }
+  }, []);
 
   const cleanup = useCallback(() => {
     viewerPcsRef.current.forEach(pc => pc.close());
@@ -446,7 +480,30 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           </View>
         </View>
 
+        {showFilters && Platform.OS === "web" && (
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filterBar}>
+            {CAM_FILTERS.map(f => (
+              <Pressable
+                key={f.id}
+                style={[styles.filterBtn, activeFilter === f.id && styles.filterBtnActive]}
+                onPress={() => { applyFilter(f.id); Haptics.selectionAsync(); }}
+              >
+                <Text style={[styles.filterBtnText, activeFilter === f.id && styles.filterBtnTextActive]}>{f.label}</Text>
+              </Pressable>
+            ))}
+          </Animated.View>
+        )}
+
         <View style={styles.liveViewerActions}>
+          {Platform.OS === "web" && (
+            <Pressable
+              style={[styles.filterToggleBtn, showFilters && styles.filterToggleBtnActive]}
+              onPress={() => { setShowFilters(s => !s); Haptics.selectionAsync(); }}
+            >
+              <Feather name="sliders" size={16} color={showFilters ? Colors.black : Colors.textPrimary} />
+              <Text style={[styles.filterToggleBtnText, showFilters && { color: Colors.black }]}>Filtry</Text>
+            </Pressable>
+          )}
           <Pressable
             style={[styles.endLiveBtn]}
             onPress={() => { cleanup(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
@@ -653,15 +710,26 @@ const styles = StyleSheet.create({
   giftToggleBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
   giftPanelWrap: { position: "absolute", bottom: 100, left: 16, right: 16 },
   giftPanel: { backgroundColor: "rgba(20,20,20,0.95)", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border, gap: 10 },
-  giftCoinsRow: { alignItems: "flex-end" },
-  giftCoinsLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.accent },
-  giftRow: { flexDirection: "row", justifyContent: "space-around" },
-  giftBtn: { alignItems: "center", gap: 4, padding: 10 },
-  giftBtnDisabled: { opacity: 0.4 },
-  giftEmoji: { fontSize: 28 },
-  giftCost: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textSecondary },
+  giftCoinsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  giftCoinsLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.accent },
+  giftCoinsHint: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
+  giftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  giftBtn: { alignItems: "center", gap: 3, padding: 10, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, width: 78 },
+  giftBtnDisabled: { opacity: 0.35 },
+  giftLabel: { fontFamily: "Montserrat_500Medium", fontSize: 10, color: Colors.textSecondary },
+  giftCostRow: { flexDirection: "row", alignItems: "center", gap: 2 },
+  giftCostIcon: { fontSize: 10 },
+  giftCost: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
   floatingGift: { position: "absolute", bottom: 160, zIndex: 100 },
-  floatingGiftText: { fontSize: 36 },
+  floatingGiftText: { fontSize: 42 },
+  filterBar: { position: "absolute", bottom: 100, left: 16, right: 16, flexDirection: "row", gap: 8, backgroundColor: "rgba(0,0,0,0.8)", borderRadius: 14, padding: 10, borderWidth: 1, borderColor: Colors.border, flexWrap: "wrap" },
+  filterBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  filterBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  filterBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textSecondary },
+  filterBtnTextActive: { color: Colors.black },
+  filterToggleBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  filterToggleBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  filterToggleBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.textPrimary },
   endLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
   endLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
   startLiveOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },

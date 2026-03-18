@@ -27,6 +27,7 @@ const INTERESTS_OPTIONS = [
   "kino", "literatura", "fitness", "fotografia", "gaming", "yoga",
 ];
 const CITIES = ["Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
+const TOTAL_STEPS = 5;
 
 async function uploadImageBase64(base64: string, mimeType: string): Promise<string> {
   const uploadUrl = process.env.EXPO_PUBLIC_DOMAIN
@@ -58,6 +59,9 @@ export default function OnboardingScreen() {
   const [interests, setInterests] = useState<string[]>([]);
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoPreview, setPhotoPreview] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
@@ -82,10 +86,7 @@ export default function OnboardingScreen() {
 
   const handlePickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Brak dostępu", "Zezwól aplikacji na dostęp do galerii.");
-      return;
-    }
+    if (!perm.granted) { Alert.alert("Brak dostępu", "Zezwól na dostęp do galerii."); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
@@ -96,7 +97,6 @@ export default function OnboardingScreen() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     if (!asset.base64) return;
-
     setUploadingPhoto(true);
     try {
       const url = await uploadImageBase64(asset.base64, asset.mimeType ?? "image/jpeg");
@@ -104,22 +104,22 @@ export default function OnboardingScreen() {
       setPhotoPreview(asset.uri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert("Błąd", "Nie udało się przesłać zdjęcia. Spróbuj ponownie.");
-    } finally {
-      setUploadingPhoto(false);
-    }
+      Alert.alert("Błąd", "Nie udało się przesłać zdjęcia.");
+    } finally { setUploadingPhoto(false); }
   };
 
   const canNext = () => {
     if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80;
     if (step === 1) return username.length >= 3 && usernameStatus === "available";
     if (step === 2) return bio.trim().length >= 20;
+    if (step === 3) return true;
+    if (step === 4) return password.length >= 6 && password === confirmPassword;
     return true;
   };
 
   const handleNext = () => {
     if (!canNext()) return;
-    if (step < 3) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(s => s + 1); }
+    if (step < TOTAL_STEPS - 1) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(s => s + 1); }
     else handleRegister();
   };
 
@@ -136,6 +136,7 @@ export default function OnboardingScreen() {
         photos: [],
         city: city || undefined,
         interests,
+        password,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)");
@@ -143,8 +144,6 @@ export default function OnboardingScreen() {
       Alert.alert("Błąd rejestracji", (e as Error).message || "Spróbuj ponownie.");
     } finally { setLoading(false); }
   };
-
-  const TOTAL_STEPS = 4;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -160,7 +159,6 @@ export default function OnboardingScreen() {
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          {/* Step 0: Basic info */}
           {step === 0 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Kim jesteś?</Text>
@@ -182,7 +180,6 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* Step 1: Username */}
           {step === 1 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twój nick</Text>
@@ -211,7 +208,6 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* Step 2: Bio */}
           {step === 2 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twoje bio</Text>
@@ -222,34 +218,28 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* Step 3: Photo + Interests */}
           {step === 3 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
-              <Text style={styles.stepTitle}>Zdjęcie profilowe</Text>
-              <Text style={styles.stepSub}>Wybierz swoje zdjęcie i zainteresowania.</Text>
-
-              {/* Photo picker */}
+              <Text style={styles.stepTitle}>Zdjęcie i tagi</Text>
+              <Text style={styles.stepSub}>Wybierz zdjęcie profilowe i zainteresowania.</Text>
               <Pressable style={styles.photoPickerBtn} onPress={handlePickPhoto} disabled={uploadingPhoto}>
-                {uploadingPhoto ? (
-                  <ActivityIndicator color={Colors.accent} size="large" />
-                ) : photoPreview ? (
-                  <Image source={{ uri: photoPreview }} style={styles.photoPickerPreview} />
-                ) : (
-                  <View style={styles.photoPickerEmpty}>
-                    <Feather name="camera" size={32} color={Colors.textMuted} />
-                    <Text style={styles.photoPickerText}>Wybierz zdjęcie z galerii</Text>
-                    <Text style={styles.photoPickerSub}>lub zostanie użyte automatyczne</Text>
-                  </View>
-                )}
-                {photoPreview ? (
-                  <View style={styles.photoPickerOverlay}>
-                    <Feather name="camera" size={20} color="#fff" />
-                    <Text style={styles.photoPickerChangeText}>Zmień</Text>
-                  </View>
-                ) : null}
+                {uploadingPhoto
+                  ? <ActivityIndicator color={Colors.accent} size="large" />
+                  : photoPreview
+                  ? <Image source={{ uri: photoPreview }} style={styles.photoPickerPreview} />
+                  : <View style={styles.photoPickerEmpty}>
+                      <Feather name="camera" size={32} color={Colors.textMuted} />
+                      <Text style={styles.photoPickerText}>Wybierz z galerii</Text>
+                      <Text style={styles.photoPickerSub}>lub użyj automatycznego avatara</Text>
+                    </View>}
+                {photoPreview
+                  ? <View style={styles.photoPickerOverlay}>
+                      <Feather name="camera" size={20} color="#fff" />
+                      <Text style={styles.photoPickerChangeText}>Zmień</Text>
+                    </View>
+                  : null}
               </Pressable>
-
-              <Text style={[styles.label, { marginTop: 8 }]}>Zainteresowania (max 5, opcjonalnie)</Text>
+              <Text style={[styles.label, { marginTop: 8 }]}>Zainteresowania (max 5)</Text>
               <View style={styles.interestsGrid}>
                 {INTERESTS_OPTIONS.map(tag => {
                   const active = interests.includes(tag);
@@ -261,6 +251,41 @@ export default function OnboardingScreen() {
                   );
                 })}
               </View>
+            </Animated.View>
+          )}
+
+          {step === 4 && (
+            <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
+              <Text style={styles.stepTitle}>Ustaw hasło</Text>
+              <Text style={styles.stepSub}>Zabezpiecz swoje konto VIBE.</Text>
+              <Text style={styles.label}>Hasło (min. 6 znaków)</Text>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Hasło..."
+                  placeholderTextColor={Colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPass}
+                  autoFocus
+                  maxLength={64}
+                />
+                <Pressable style={styles.showPassBtn} onPress={() => setShowPass(s => !s)}>
+                  <Feather name={showPass ? "eye-off" : "eye"} size={18} color={Colors.textMuted} />
+                </Pressable>
+              </View>
+              <Text style={styles.label}>Powtórz hasło</Text>
+              <TextInput
+                style={[styles.input, confirmPassword.length > 0 && confirmPassword !== password && styles.inputError, confirmPassword.length > 0 && confirmPassword === password && styles.inputSuccess]}
+                placeholder="Powtórz hasło..."
+                placeholderTextColor={Colors.textMuted}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showPass}
+                maxLength={64}
+              />
+              {confirmPassword.length > 0 && confirmPassword !== password && <Text style={styles.errorText}>Hasła nie pasują</Text>}
+              {confirmPassword.length > 0 && confirmPassword === password && <Text style={styles.successText}>Hasła pasują ✓</Text>}
 
               <View style={styles.summaryBox}>
                 <Text style={styles.summaryTitle}>Podsumowanie</Text>
@@ -277,7 +302,11 @@ export default function OnboardingScreen() {
             <Pressable style={styles.backBtn} onPress={() => { setStep(s => s - 1); Haptics.selectionAsync(); }}>
               <Feather name="arrow-left" size={20} color={Colors.textSecondary} />
             </Pressable>
-          ) : <View style={{ width: 44 }} />}
+          ) : (
+            <Pressable style={styles.backBtn} onPress={() => router.back()}>
+              <Feather name="arrow-left" size={20} color={Colors.textSecondary} />
+            </Pressable>
+          )}
           <Pressable
             style={[styles.nextBtn, (!canNext() || loading) && styles.nextBtnDisabled]}
             onPress={handleNext}
@@ -285,8 +314,8 @@ export default function OnboardingScreen() {
           >
             {loading ? <ActivityIndicator color={Colors.black} /> : (
               <>
-                <Text style={styles.nextBtnText}>{step === 3 ? "Dołącz do VIBE" : "Dalej"}</Text>
-                <Feather name={step === 3 ? "zap" : "arrow-right"} size={18} color={Colors.black} />
+                <Text style={styles.nextBtnText}>{step === TOTAL_STEPS - 1 ? "Dołącz do VIBE" : "Dalej"}</Text>
+                <Feather name={step === TOTAL_STEPS - 1 ? "zap" : "arrow-right"} size={18} color={Colors.black} />
               </>
             )}
           </Pressable>
@@ -301,7 +330,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingBottom: 8, paddingTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   logo: { fontFamily: "Montserrat_700Bold", fontSize: 28, color: Colors.accent, letterSpacing: 4 },
   stepsRow: { flexDirection: "row", gap: 6 },
-  stepDot: { width: 22, height: 4, borderRadius: 2, backgroundColor: Colors.border },
+  stepDot: { width: 18, height: 4, borderRadius: 2, backgroundColor: Colors.border },
   stepDotActive: { backgroundColor: Colors.accent },
   content: { paddingHorizontal: 20, paddingBottom: 20 },
   stepBox: { gap: 12, paddingTop: 16 },
@@ -333,6 +362,8 @@ const styles = StyleSheet.create({
   photoPickerPreview: { width: "100%", height: "100%", resizeMode: "cover" },
   photoPickerOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.5)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10 },
   photoPickerChangeText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: "#fff" },
+  passwordRow: { flexDirection: "row", alignItems: "center", gap: 0 },
+  showPassBtn: { position: "absolute", right: 14, padding: 4 },
   summaryBox: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.border, gap: 6, marginTop: 8 },
   summaryTitle: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
   summaryName: { fontFamily: "Montserrat_700Bold", fontSize: 17, color: Colors.textPrimary },

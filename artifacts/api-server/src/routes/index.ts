@@ -7,9 +7,11 @@ import matchesRouter from "./matches";
 import messagesRouter from "./messages";
 import friendsRouter from "./friends";
 import livesRouter from "./lives";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
+router.use(authRouter);
 router.use(healthRouter);
 router.use(usersRouter);
 router.use(likesRouter);

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, likesTable } from "@workspace/db";
-import { eq, and, notInArray } from "drizzle-orm";
+import { eq, and, notInArray, isNotNull } from "drizzle-orm";
+import { CITY_COORDS } from "./auth";
 
 const router: IRouter = Router();
 
@@ -14,9 +15,10 @@ export function toUserDto(u: typeof usersTable.$inferSelect) {
     photoUrl: u.photoUrl,
     photos: u.photos ?? [],
     isPremium: u.isPremium,
-    isVerified: (u as any).isVerified ?? false,
     city: u.city,
     interests: u.interests ?? [],
+    lat: u.lat ?? null,
+    lng: u.lng ?? null,
   };
 }
 
@@ -35,7 +37,7 @@ router.get("/users", async (req, res) => {
   res.json(users.map(toUserDto));
 });
 
-// IMPORTANT: These specific routes must come BEFORE the generic /:id route
+// IMPORTANT: Specific routes must come BEFORE the generic /:id route
 router.get("/users/check-username/:username", async (req, res) => {
   const raw = req.params.username.replace(/^@/, "").toLowerCase();
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, raw));
@@ -49,6 +51,22 @@ router.get("/users/by-username/:username", async (req, res) => {
   res.json(toUserDto(user));
 });
 
+router.get("/users/map", async (req, res) => {
+  const users = await db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    age: usersTable.age,
+    photoUrl: usersTable.photoUrl,
+    city: usersTable.city,
+    lat: usersTable.lat,
+    lng: usersTable.lng,
+    isPremium: usersTable.isPremium,
+  }).from(usersTable).where(
+    and(isNotNull(usersTable.lat), isNotNull(usersTable.lng))
+  ).limit(200);
+  res.json(users);
+});
+
 router.post("/users/register", async (req, res) => {
   const { name, username, age, bio, photoUrl, photos, city, interests } = req.body;
   if (!name || !age || !bio) { res.status(400).json({ error: "name, age, bio required" }); return; }
@@ -60,6 +78,8 @@ router.post("/users/register", async (req, res) => {
     if (existing) { res.status(400).json({ error: "Nazwa użytkownika jest już zajęta" }); return; }
   }
 
+  const coords = city ? CITY_COORDS[city] : undefined;
+
   const [user] = await db.insert(usersTable).values({
     name,
     username: rawUsername,
@@ -70,6 +90,8 @@ router.post("/users/register", async (req, res) => {
     city: city || null,
     interests: interests || [],
     isPremium: false,
+    lat: coords?.[0] ?? null,
+    lng: coords?.[1] ?? null,
   }).returning();
 
   res.json(toUserDto(user));
@@ -95,8 +117,14 @@ router.patch("/users/:id", async (req, res) => {
   if (bio !== undefined) updates.bio = bio;
   if (photoUrl !== undefined) updates.photoUrl = photoUrl;
   if (photos !== undefined) updates.photos = photos;
-  if (city !== undefined) updates.city = city;
   if (interests !== undefined) updates.interests = interests;
+
+  if (city !== undefined) {
+    updates.city = city;
+    const coords = city ? CITY_COORDS[city] : null;
+    updates.lat = coords?.[0] ?? null;
+    updates.lng = coords?.[1] ?? null;
+  }
 
   if (username !== undefined) {
     const rawUsername = username ? username.replace(/^@/, "").toLowerCase() : null;

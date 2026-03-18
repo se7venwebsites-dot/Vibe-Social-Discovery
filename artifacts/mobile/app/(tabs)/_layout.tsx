@@ -13,7 +13,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     if (!isLoadingAuth && !isRegistered) {
-      router.replace("/onboarding");
+      router.replace("/auth");
     }
   }, [isLoadingAuth, isRegistered]);
 
@@ -54,6 +54,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Odkryj", tabBarIcon: ({ color }) => <Feather name="zap" size={22} color={color} /> }} />
       <Tabs.Screen name="likes" options={{ title: "Lajki", tabBarIcon: ({ color }) => <Feather name="heart" size={22} color={color} /> }} />
+      <Tabs.Screen name="map" options={{ title: "Mapa", tabBarIcon: ({ color }) => <Feather name="map-pin" size={22} color={color} /> }} />
       <Tabs.Screen name="video" options={{ title: "Losowy", tabBarIcon: ({ color }) => <Feather name="video" size={22} color={color} /> }} />
       <Tabs.Screen name="lives" options={{ title: "Live", tabBarIcon: ({ color }) => <Feather name="radio" size={22} color={color} /> }} />
       <Tabs.Screen name="messages" options={{ title: "Czat", tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} /> }} />

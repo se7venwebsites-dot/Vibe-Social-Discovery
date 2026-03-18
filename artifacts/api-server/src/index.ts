@@ -9,7 +9,7 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${raw
 
 const server = createServer(app);
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ server, path: "/api/ws" });
 
 interface Peer {
   ws: WebSocket;
