@@ -3,9 +3,56 @@ import { Tabs, router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import React, { useEffect } from "react";
 import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
-import { useUserContext } from "@/context/UserContext";
+import { useUserContext, BASE_URL } from "@/context/UserContext";
+
+function ChatTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  const { currentUser } = useUserContext();
+
+  const { data: friendRequests = [] } = useQuery<{ requestId: number }[]>({
+    queryKey: ["friend-requests-badge", currentUser?.id],
+    queryFn: async () => {
+      const res = await fetch(`${BASE_URL}/friends/requests/${currentUser!.id}`);
+      return res.json();
+    },
+    enabled: !!currentUser,
+    refetchInterval: 20000,
+  });
+
+  const { data: matches = [] } = useQuery<{ unreadCount?: number }[]>({
+    queryKey: ["matches-badge", currentUser?.id],
+    queryFn: async () => {
+      const res = await fetch(`${BASE_URL}/matches/${currentUser!.id}`);
+      return res.json();
+    },
+    enabled: !!currentUser,
+    refetchInterval: 20000,
+  });
+
+  const unreadMessages = matches.reduce((sum, m) => sum + (m.unreadCount ?? 0), 0);
+  const hasDot = friendRequests.length > 0 || unreadMessages > 0;
+
+  return (
+    <View>
+      <Feather name="message-circle" size={22} color={color} />
+      {hasDot && (
+        <View style={{
+          position: "absolute",
+          top: -3,
+          right: -5,
+          width: 9,
+          height: 9,
+          borderRadius: 5,
+          backgroundColor: Colors.danger,
+          borderWidth: 1.5,
+          borderColor: Colors.black,
+        }} />
+      )}
+    </View>
+  );
+}
 
 export default function TabLayout() {
   const { isRegistered, isLoadingAuth } = useUserContext();
@@ -57,7 +104,7 @@ export default function TabLayout() {
       <Tabs.Screen name="map" options={{ title: "Mapa", tabBarIcon: ({ color }) => <Feather name="map-pin" size={22} color={color} /> }} />
       <Tabs.Screen name="video" options={{ title: "Losowy", tabBarIcon: ({ color }) => <Feather name="video" size={22} color={color} /> }} />
       <Tabs.Screen name="lives" options={{ title: "Live", tabBarIcon: ({ color }) => <Feather name="radio" size={22} color={color} /> }} />
-      <Tabs.Screen name="messages" options={{ title: "Czat", tabBarIcon: ({ color }) => <Feather name="message-circle" size={22} color={color} /> }} />
+      <Tabs.Screen name="messages" options={{ title: "Czat", tabBarIcon: ({ color, focused }) => <ChatTabIcon color={color} focused={focused} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Profil", tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }} />
     </Tabs>
   );

@@ -54,7 +54,7 @@ function LikeCard({
   return (
     <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
       <Pressable style={styles.likeCard} onPress={() => onPress(user)}>
-        <Image source={{ uri: user.photoUrl }} style={styles.likeImg} resizeMode="cover" />
+        <Image source={{ uri: user.photoUrl }} style={styles.likeImg} resizeMode="contain" />
         <View style={styles.likeOverlay} />
         <View style={styles.likeInfo}>
           <Text style={styles.likeName}>{user.name}, {user.age}</Text>

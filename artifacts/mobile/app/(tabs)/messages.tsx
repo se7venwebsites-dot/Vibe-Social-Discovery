@@ -148,7 +148,7 @@ export default function MessagesScreen() {
           <FlatList data={matches} keyExtractor={m => String(m.matchId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, gap: 10 }}
             renderItem={({ item: match, index }) => (
               <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-                <Pressable style={styles.card} onPress={() => openChat(match.id)}>
+                <Pressable style={[styles.card, (match.unreadCount ?? 0) > 0 && styles.cardUnread]} onPress={() => openChat(match.id)}>
                   <View style={styles.avatarWrap}>
                     <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
                     <View style={styles.onlineDot} />
@@ -159,10 +159,14 @@ export default function MessagesScreen() {
                     {!isPremium ? (
                       <View style={styles.lockRow}><Feather name="lock" size={11} color={Colors.textMuted} /><Text style={styles.lockText}>Odblokuj za 24,99 zł/mies.</Text></View>
                     ) : (
-                      <Text style={styles.cardPreview} numberOfLines={1}>{match.lastMessage || "Powiedz cześć! 👋"}</Text>
+                      <Text style={[styles.cardPreview, (match.unreadCount ?? 0) > 0 && styles.cardPreviewUnread]} numberOfLines={1}>{match.lastMessage || "Powiedz cześć! 👋"}</Text>
                     )}
                   </View>
-                  <Feather name="chevron-right" size={18} color={Colors.textMuted} />
+                  {(match.unreadCount ?? 0) > 0 ? (
+                    <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{match.unreadCount}</Text></View>
+                  ) : (
+                    <Feather name="chevron-right" size={18} color={Colors.textMuted} />
+                  )}
                 </Pressable>
               </Animated.View>
             )}
@@ -290,6 +294,10 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 18, color: Colors.textPrimary },
   emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
   card: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border },
+  cardUnread: { borderColor: "rgba(204,255,0,0.25)", backgroundColor: "rgba(204,255,0,0.04)" },
+  cardPreviewUnread: { color: Colors.textPrimary, fontFamily: "Montserrat_600SemiBold" },
+  unreadBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: Colors.danger, alignItems: "center", justifyContent: "center", paddingHorizontal: 5 },
+  unreadBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: "#fff" },
   avatarWrap: { position: "relative" },
   avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.surface },
   onlineDot: { position: "absolute", bottom: 1, right: 1, width: 12, height: 12, borderRadius: 6, backgroundColor: "#00DC82", borderWidth: 2, borderColor: Colors.black },

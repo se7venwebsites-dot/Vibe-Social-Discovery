@@ -120,7 +120,7 @@ function SwipeCard({
         <Image
           source={{ uri: allPhotos[photoIdx] || user.photoUrl }}
           style={styles.cardImage}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </Pressable>
 
