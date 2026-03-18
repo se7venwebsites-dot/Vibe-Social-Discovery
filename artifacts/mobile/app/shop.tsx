@@ -21,22 +21,22 @@ import Colors from "@/constants/colors";
 const COINS_KEY = "vibe_coins";
 
 const PACKAGES = [
-  { id: "p100", coins: 100, price: "2,99 zł", bonus: "", popular: false, color: Colors.surface },
-  { id: "p500", coins: 500, price: "9,99 zł", bonus: "+50 bonus", popular: false, color: Colors.surface },
-  { id: "p1200", coins: 1200, price: "19,99 zł", bonus: "+200 bonus", popular: true, color: "rgba(204,255,0,0.08)" },
-  { id: "p3000", coins: 3000, price: "39,99 zł", bonus: "+600 bonus", popular: false, color: Colors.surface },
-  { id: "p7000", coins: 7000, price: "79,99 zł", bonus: "+1400 bonus 🔥", popular: false, color: Colors.surface },
+  { id: "p500", coins: 500, price: "2,99 zł", bonus: "", popular: false, color: Colors.surface },
+  { id: "p2000", coins: 2000, price: "9,99 zł", bonus: "+200 bonus", popular: false, color: Colors.surface },
+  { id: "p5000", coins: 5000, price: "19,99 zł", bonus: "+500 bonus", popular: true, color: "rgba(204,255,0,0.08)" },
+  { id: "p12000", coins: 12000, price: "39,99 zł", bonus: "+2000 bonus", popular: false, color: Colors.surface },
+  { id: "p30000", coins: 30000, price: "79,99 zł", bonus: "+5000 bonus 🔥", popular: false, color: Colors.surface },
 ];
 
 const GIFT_PRICES = [
-  { emoji: "❤️", label: "Serduszko", cost: 10 },
-  { emoji: "🌹", label: "Róża", cost: 15 },
-  { emoji: "🔥", label: "Ogień", cost: 25 },
-  { emoji: "⭐", label: "Gwiazdka", cost: 30 },
-  { emoji: "💎", label: "Diament", cost: 50 },
-  { emoji: "🌈", label: "Tęcza", cost: 75 },
-  { emoji: "👑", label: "Korona", cost: 100 },
-  { emoji: "🚀", label: "Rakieta", cost: 200 },
+  { emoji: "❤️", label: "Serduszko", cost: 100 },
+  { emoji: "🌹", label: "Róża", cost: 250 },
+  { emoji: "🔥", label: "Ogień", cost: 500 },
+  { emoji: "⭐", label: "Gwiazdka", cost: 750 },
+  { emoji: "💎", label: "Diament", cost: 1500 },
+  { emoji: "🌈", label: "Tęcza", cost: 3000 },
+  { emoji: "👑", label: "Korona", cost: 5000 },
+  { emoji: "🚀", label: "Rakieta", cost: 10000 },
 ];
 
 export default function ShopScreen() {

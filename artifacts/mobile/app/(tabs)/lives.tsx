@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeIn, FadeInDown, FadeOut, useSharedValue, useAnimatedStyle, withTiming, withSpring } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut, useSharedValue, useAnimatedStyle, withTiming, withSpring, withSequence, withDelay, runOnJS } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
@@ -26,14 +26,14 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   : `ws://localhost:8080/ws`;
 
 const GIFTS = [
-  { id: "heart", emoji: "❤️", label: "Serce", cost: 50, size: 34 },
-  { id: "rose", emoji: "🌹", label: "Róża", cost: 100, size: 34 },
-  { id: "fire", emoji: "🔥", label: "Ogień", cost: 150, size: 34 },
-  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 200, size: 36 },
-  { id: "diamond", emoji: "💎", label: "Diament", cost: 500, size: 38 },
-  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 750, size: 38 },
-  { id: "crown", emoji: "👑", label: "Korona", cost: 1000, size: 40 },
-  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 2000, size: 42 },
+  { id: "heart", emoji: "❤️", label: "Serce", cost: 100, size: 34 },
+  { id: "rose", emoji: "🌹", label: "Róża", cost: 250, size: 34 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 500, size: 34 },
+  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 750, size: 36 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 1500, size: 38 },
+  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 3000, size: 38 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 5000, size: 40 },
+  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 10000, size: 42 },
 ];
 
 const CAM_FILTERS = [
@@ -118,6 +118,50 @@ function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: 
   );
 }
 
+function FloatingGiftBubble({ emoji, x, onDone }: { emoji: string; x: number; onDone: () => void }) {
+  const translateY = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.3);
+
+  useEffect(() => {
+    const drift = (Math.random() - 0.5) * 60;
+    opacity.value = withSequence(
+      withTiming(1, { duration: 250 }),
+      withDelay(1800, withTiming(0, { duration: 800 }))
+    );
+    scale.value = withSequence(
+      withSpring(1.5, { damping: 6, stiffness: 200 }),
+      withTiming(1.1, { duration: 400 }),
+      withDelay(1400, withTiming(0.7, { duration: 800 }))
+    );
+    translateY.value = withTiming(-320, { duration: 2800 });
+    translateX.value = withSequence(
+      withTiming(drift * 0.4, { duration: 700 }),
+      withTiming(drift, { duration: 700 }),
+      withTiming(drift * 0.7, { duration: 700 }),
+      withTiming(drift * 1.1, { duration: 600 })
+    );
+    const t = setTimeout(onDone, 3000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: translateY.value },
+      { translateX: translateX.value },
+      { scale: scale.value },
+    ],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.floatingGift, { left: `${x}%` as any }, style]}>
+      <Text style={styles.floatingGiftText}>{emoji}</Text>
+    </Animated.View>
+  );
+}
+
 function GiftPanel({ onSend, coins, disabled }: { onSend: (gift: typeof GIFTS[0]) => void; coins: number; disabled: boolean }) {
   return (
     <View style={styles.giftPanel}>
@@ -165,7 +209,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
   const [chatText, setChatText] = useState("");
   const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
-  const [coins, setCoins] = useState(500);
+  const [coins, setCoins] = useState(2000);
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
@@ -243,15 +287,16 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "live-chat") {
-        const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
-        setChatMessages(prev => [...prev.slice(-99), chatMsg]);
+        if ((msg.name as string) !== currentUser?.name) {
+          const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
+          setChatMessages(prev => [...prev.slice(-99), chatMsg]);
+        }
       }
 
       if (msg.type === "live-gift") {
         const fid = Math.random().toString(36).slice(2);
-        const fx = Math.random() * 60 + 10;
+        const fx = Math.random() * 55 + 5;
         setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
-        setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== fid)), 3000);
       }
 
       if (msg.type === "live-error") {
@@ -276,11 +321,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const handleSendGift = useCallback((gift: typeof GIFTS[0]) => {
     if (coins < gift.cost) return;
     setCoins(c => c - gift.cost);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     const id = Math.random().toString(36).slice(2);
-    const x = Math.random() * 60 + 10;
+    const x = Math.random() * 55 + 5;
     setFloatingGifts(prev => [...prev, { id, emoji: gift.emoji, x }]);
-    setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== id)), 3000);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "live-gift", senderName: currentUser?.name || "Widz", emoji: gift.emoji, cost: gift.cost }));
     }
@@ -289,10 +333,13 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const sendChat = useCallback(() => {
     const trimmed = chatText.trim();
     if (!trimmed || !wsRef.current) return;
-    if (wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "live-chat", name: currentUser?.name || "Widz", text: trimmed }));
-    }
+    const myName = currentUser?.name || "Widz";
+    const newMsg = { id: `local_${Date.now()}`, name: myName, text: trimmed };
+    setChatMessages(prev => [...prev.slice(-99), newMsg]);
     setChatText("");
+    if (wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "live-chat", name: myName, text: trimmed }));
+    }
   }, [chatText, currentUser]);
 
   const handleAddFriend = async () => {
@@ -330,9 +377,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
         {/* Floating gifts */}
         {floatingGifts.map(g => (
-          <Animated.View key={g.id} entering={FadeInDown.springify()} exiting={FadeOut} style={[styles.floatingGift, { left: `${g.x}%` as any }]}>
-            <Text style={styles.floatingGiftText}>{g.emoji}</Text>
-          </Animated.View>
+          <FloatingGiftBubble
+            key={g.id}
+            emoji={g.emoji}
+            x={g.x}
+            onDone={() => setFloatingGifts(prev => prev.filter(fg => fg.id !== g.id))}
+          />
         ))}
 
         {live && (
@@ -509,9 +559,8 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             setGiftNotifs(prev => [...prev.slice(-4), newNotif]);
             setTimeout(() => setGiftNotifs(prev => prev.filter(n => n.id !== notifId)), 4000);
             const fid = Math.random().toString(36).slice(2);
-            const fx = Math.random() * 60 + 10;
+            const fx = Math.random() * 55 + 5;
             setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
-            setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== fid)), 3000);
           }
           if (msg.type === "viewer-joined") {
             const viewerPeerId = msg.viewerPeerId as string;
@@ -591,9 +640,12 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
         {/* Floating gifts */}
         {floatingGifts.map(g => (
-          <Animated.View key={g.id} entering={FadeInDown.springify()} exiting={FadeOut} style={[styles.floatingGift, { left: `${g.x}%` as any }]}>
-            <Text style={styles.floatingGiftText}>{g.emoji}</Text>
-          </Animated.View>
+          <FloatingGiftBubble
+            key={g.id}
+            emoji={g.emoji}
+            x={g.x}
+            onDone={() => setFloatingGifts(prev => prev.filter(fg => fg.id !== g.id))}
+          />
         ))}
 
         {/* Gift notifications */}
@@ -878,8 +930,8 @@ const styles = StyleSheet.create({
   giftCostRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   giftCostIcon: { fontSize: 10 },
   giftCost: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
-  floatingGift: { position: "absolute", bottom: 160, zIndex: 100 },
-  floatingGiftText: { fontSize: 42 },
+  floatingGift: { position: "absolute", bottom: 160, zIndex: 200 },
+  floatingGiftText: { fontSize: 56 },
   filterBar: { position: "absolute", bottom: 100, left: 16, right: 16, flexDirection: "row", gap: 8, backgroundColor: "rgba(0,0,0,0.8)", borderRadius: 14, padding: 10, borderWidth: 1, borderColor: Colors.border, flexWrap: "wrap" },
   filterBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   filterBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
