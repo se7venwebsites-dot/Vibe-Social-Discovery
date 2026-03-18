@@ -26,23 +26,29 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   : `ws://localhost:8080/ws`;
 
 const GIFTS = [
-  { id: "heart", emoji: "❤️", label: "Serce", cost: 10, size: 34 },
-  { id: "rose", emoji: "🌹", label: "Róża", cost: 15, size: 34 },
-  { id: "fire", emoji: "🔥", label: "Ogień", cost: 25, size: 34 },
-  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 30, size: 36 },
-  { id: "diamond", emoji: "💎", label: "Diament", cost: 50, size: 38 },
-  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 75, size: 38 },
-  { id: "crown", emoji: "👑", label: "Korona", cost: 100, size: 40 },
-  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 200, size: 42 },
+  { id: "heart", emoji: "❤️", label: "Serce", cost: 50, size: 34 },
+  { id: "rose", emoji: "🌹", label: "Róża", cost: 100, size: 34 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 150, size: 34 },
+  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 200, size: 36 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 500, size: 38 },
+  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 750, size: 38 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 1000, size: 40 },
+  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 2000, size: 42 },
 ];
 
 const CAM_FILTERS = [
-  { id: "none", label: "Normal", css: "" },
+  { id: "none", label: "Normalny", css: "" },
+  { id: "beauty", label: "Beauty", css: "brightness(108%) contrast(95%) saturate(115%)" },
   { id: "bw", label: "B&W", css: "grayscale(100%)" },
   { id: "sepia", label: "Sepia", css: "sepia(80%)" },
-  { id: "cool", label: "Chłodny", css: "hue-rotate(180deg) saturate(120%)" },
-  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(105%)" },
-  { id: "vivid", label: "Żywy", css: "saturate(200%) contrast(110%)" },
+  { id: "cool", label: "Chłodny", css: "hue-rotate(190deg) saturate(140%) brightness(105%)" },
+  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(108%)" },
+  { id: "vivid", label: "Żywy", css: "saturate(220%) contrast(115%)" },
+  { id: "neon", label: "Neon", css: "saturate(300%) contrast(120%) brightness(88%) hue-rotate(100deg)" },
+  { id: "vintage", label: "Vintage", css: "sepia(40%) saturate(80%) contrast(90%) brightness(95%)" },
+  { id: "fade", label: "Fade", css: "saturate(60%) contrast(80%) brightness(118%)" },
+  { id: "film", label: "Film", css: "grayscale(25%) contrast(112%) brightness(95%) sepia(15%)" },
+  { id: "glam", label: "Glam", css: "brightness(115%) contrast(105%) saturate(130%) hue-rotate(340deg)" },
 ];
 
 interface LiveHost {
@@ -155,8 +161,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const [connected, setConnected] = useState(false);
   const [addedFriend, setAddedFriend] = useState(false);
   const [showGifts, setShowGifts] = useState(false);
+  const [showChat, setShowChat] = useState(true);
+  const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
+  const [chatText, setChatText] = useState("");
   const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
-  const [coins, setCoins] = useState(200);
+  const [coins, setCoins] = useState(500);
+  const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
   const cleanup = useCallback(() => {
@@ -232,6 +242,18 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
       }
 
+      if (msg.type === "live-chat") {
+        const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
+        setChatMessages(prev => [...prev.slice(-99), chatMsg]);
+      }
+
+      if (msg.type === "live-gift") {
+        const fid = Math.random().toString(36).slice(2);
+        const fx = Math.random() * 60 + 10;
+        setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
+        setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== fid)), 3000);
+      }
+
       if (msg.type === "live-error") {
         Alert.alert("Błąd", msg.error || "Nie można dołączyć do live'a");
         cleanup();
@@ -259,7 +281,19 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     const x = Math.random() * 60 + 10;
     setFloatingGifts(prev => [...prev, { id, emoji: gift.emoji, x }]);
     setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== id)), 3000);
-  }, [coins]);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "live-gift", senderName: currentUser?.name || "Widz", emoji: gift.emoji, cost: gift.cost }));
+    }
+  }, [coins, currentUser]);
+
+  const sendChat = useCallback(() => {
+    const trimmed = chatText.trim();
+    if (!trimmed || !wsRef.current) return;
+    if (wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "live-chat", name: currentUser?.name || "Widz", text: trimmed }));
+    }
+    setChatText("");
+  }, [chatText, currentUser]);
 
   const handleAddFriend = async () => {
     if (!currentUser || !live) return;
@@ -323,6 +357,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
           </View>
         )}
 
+        {/* Viewer action buttons */}
         <View style={styles.liveViewerActions}>
           <Pressable
             style={[styles.addFriendBtn, addedFriend && styles.addFriendBtnDone]}
@@ -330,9 +365,13 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             disabled={addedFriend}
           >
             <Feather name={addedFriend ? "check" : "user-plus"} size={16} color={addedFriend ? Colors.black : Colors.textPrimary} />
-            <Text style={[styles.addFriendBtnText, addedFriend && { color: Colors.black }]}>
-              {addedFriend ? "Zaproszono!" : "Dodaj znajomego"}
-            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.liveIconBtn, showChat && styles.liveIconBtnActive]}
+            onPress={() => { setShowChat(s => !s); Haptics.selectionAsync(); }}
+          >
+            <Feather name="message-circle" size={18} color={showChat ? Colors.black : Colors.textPrimary} />
           </Pressable>
 
           <Pressable
@@ -342,6 +381,43 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             <Text style={{ fontSize: 18 }}>🎁</Text>
           </Pressable>
         </View>
+
+        {/* Chat panel */}
+        {showChat && (
+          <View style={styles.chatPanel}>
+            <FlatList
+              ref={chatListRef}
+              data={chatMessages}
+              keyExtractor={m => m.id}
+              style={styles.chatList}
+              contentContainerStyle={{ gap: 4, paddingVertical: 4 }}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+              renderItem={({ item }) => (
+                <View style={styles.chatBubble}>
+                  <Text style={styles.chatSender}>{item.name}: </Text>
+                  <Text style={styles.chatText}>{item.text}</Text>
+                </View>
+              )}
+              ListEmptyComponent={<Text style={styles.chatEmpty}>Napisz coś...</Text>}
+            />
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Napisz komentarz..."
+                placeholderTextColor={Colors.textMuted}
+                value={chatText}
+                onChangeText={setChatText}
+                onSubmitEditing={sendChat}
+                returnKeyType="send"
+                maxLength={200}
+              />
+              <Pressable style={styles.chatSendBtn} onPress={sendChat} disabled={!chatText.trim()}>
+                <Feather name="send" size={14} color={Colors.black} />
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {showGifts && (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.giftPanelWrap}>
@@ -360,8 +436,14 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const myPeerIdRef = useRef<string>("");
   const [broadcasting, setBroadcasting] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
+  const [viewers, setViewers] = useState<{ peerId: string; name: string }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
+  const [giftNotifs, setGiftNotifs] = useState<{ id: string; name: string; emoji: string }[]>([]);
+  const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
+  const [showChat, setShowChat] = useState(true);
   const [activeFilter, setActiveFilter] = useState("none");
   const [showFilters, setShowFilters] = useState(false);
+  const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
   const applyFilter = useCallback((filterId: string) => {
@@ -404,7 +486,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           c.innerHTML = "";
           const v = document.createElement("video");
           v.autoplay = true; v.muted = true; v.playsInline = true;
-          v.style.cssText = "width:100%;height:100%;object-fit:cover;";
+          v.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
           v.srcObject = stream;
           c.appendChild(v);
         }
@@ -417,9 +499,25 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
           if (msg.type === "connected") { myPeerIdRef.current = msg.peerId; }
+          if (msg.type === "live-chat") {
+            const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
+            setChatMessages(prev => [...prev.slice(-99), chatMsg]);
+          }
+          if (msg.type === "live-gift") {
+            const notifId = Math.random().toString(36).slice(2);
+            const newNotif = { id: notifId, name: msg.senderName as string, emoji: msg.emoji as string };
+            setGiftNotifs(prev => [...prev.slice(-4), newNotif]);
+            setTimeout(() => setGiftNotifs(prev => prev.filter(n => n.id !== notifId)), 4000);
+            const fid = Math.random().toString(36).slice(2);
+            const fx = Math.random() * 60 + 10;
+            setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
+            setTimeout(() => setFloatingGifts(prev => prev.filter(g => g.id !== fid)), 3000);
+          }
           if (msg.type === "viewer-joined") {
             const viewerPeerId = msg.viewerPeerId as string;
+            const viewerName = (msg.viewerName as string) || "Widz";
             setViewerCount(c => c + 1);
+            setViewers(prev => [...prev, { peerId: viewerPeerId, name: viewerName }]);
             const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             viewerPcsRef.current.set(viewerPeerId, pc);
             localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
@@ -439,9 +537,10 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             if (pc) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {} }
           }
           if (msg.type === "viewer-left") {
-            const pc = viewerPcsRef.current.get(msg.viewerPeerId);
-            if (pc) { pc.close(); viewerPcsRef.current.delete(msg.viewerPeerId); }
+            const pc = viewerPcsRef.current.get(msg.viewerPeerId as string);
+            if (pc) { pc.close(); viewerPcsRef.current.delete(msg.viewerPeerId as string); }
             setViewerCount(c => Math.max(0, c - 1));
+            setViewers(prev => prev.filter(v => v.peerId !== msg.viewerPeerId));
           }
         };
         ws.onclose = () => setBroadcasting(false);
@@ -468,18 +567,70 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           </View>
         )}
 
+        {/* Header */}
         <View style={styles.liveViewerHeader}>
           <View style={styles.liveBroadcastBadge}>
             {broadcasting && <View style={styles.liveDot} />}
             <Text style={styles.liveBadgeText}>{broadcasting ? "LIVE" : "Łączę..."}</Text>
           </View>
           <View style={{ flex: 1 }} />
+          {viewers.length > 0 && (
+            <View style={styles.viewerPillRow}>
+              {viewers.slice(-3).map(v => (
+                <View key={v.peerId} style={styles.viewerPill}>
+                  <Text style={styles.viewerPillText}>{v.name.slice(0, 8)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
           <View style={styles.liveViewerCount}>
             <Feather name="eye" size={13} color={Colors.textPrimary} />
             <Text style={styles.liveViewerCountText}>{viewerCount}</Text>
           </View>
         </View>
 
+        {/* Floating gifts */}
+        {floatingGifts.map(g => (
+          <Animated.View key={g.id} entering={FadeInDown.springify()} exiting={FadeOut} style={[styles.floatingGift, { left: `${g.x}%` as any }]}>
+            <Text style={styles.floatingGiftText}>{g.emoji}</Text>
+          </Animated.View>
+        ))}
+
+        {/* Gift notifications */}
+        {giftNotifs.length > 0 && (
+          <View style={styles.giftNotifsPanel}>
+            {giftNotifs.map(n => (
+              <Animated.View key={n.id} entering={FadeIn} exiting={FadeOut} style={styles.giftNotifRow}>
+                <Text style={styles.giftNotifEmoji}>{n.emoji}</Text>
+                <Text style={styles.giftNotifText}>{n.name} wysłał/a {n.emoji}</Text>
+              </Animated.View>
+            ))}
+          </View>
+        )}
+
+        {/* Chat panel (host view - read only with toggle) */}
+        {showChat && (
+          <View style={[styles.chatPanel, styles.chatPanelHost]}>
+            <FlatList
+              ref={chatListRef}
+              data={chatMessages}
+              keyExtractor={m => m.id}
+              style={styles.chatList}
+              contentContainerStyle={{ gap: 4, paddingVertical: 4 }}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+              renderItem={({ item }) => (
+                <View style={styles.chatBubble}>
+                  <Text style={styles.chatSender}>{item.name}: </Text>
+                  <Text style={styles.chatText}>{item.text}</Text>
+                </View>
+              )}
+              ListEmptyComponent={<Text style={styles.chatEmpty}>Czat widzów pojawi się tutaj</Text>}
+            />
+          </View>
+        )}
+
+        {/* Filter bar */}
         {showFilters && Platform.OS === "web" && (
           <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filterBar}>
             {CAM_FILTERS.map(f => (
@@ -494,7 +645,14 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           </Animated.View>
         )}
 
+        {/* Host action buttons */}
         <View style={styles.liveViewerActions}>
+          <Pressable
+            style={[styles.liveIconBtn, showChat && styles.liveIconBtnActive]}
+            onPress={() => { setShowChat(s => !s); Haptics.selectionAsync(); }}
+          >
+            <Feather name="message-circle" size={18} color={showChat ? Colors.black : Colors.textPrimary} />
+          </Pressable>
           {Platform.OS === "web" && (
             <Pressable
               style={[styles.filterToggleBtn, showFilters && styles.filterToggleBtnActive]}
@@ -571,7 +729,7 @@ export default function LivesScreen() {
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   const startLiveMutation = useMutation({
@@ -743,4 +901,23 @@ const styles = StyleSheet.create({
   startLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: "#fff" },
   verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
   verifiedBadgeSm: { width: 14, height: 14, borderRadius: 7, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
+  liveIconBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
+  liveIconBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  chatPanel: { position: "absolute", bottom: 110, left: 12, width: 220, maxHeight: 200, backgroundColor: "rgba(0,0,0,0.75)", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+  chatPanelHost: { bottom: 120 },
+  chatList: { maxHeight: 140, paddingHorizontal: 8, paddingTop: 4 },
+  chatBubble: { flexDirection: "row", flexWrap: "wrap", marginBottom: 2 },
+  chatSender: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
+  chatText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textPrimary, flexShrink: 1 },
+  chatEmpty: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted, padding: 8 },
+  chatInputRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
+  chatInput: { flex: 1, fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textPrimary, paddingVertical: 4 },
+  chatSendBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center" },
+  viewerPillRow: { flexDirection: "row", gap: 4, marginRight: 8 },
+  viewerPill: { backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  viewerPillText: { fontFamily: "Montserrat_600SemiBold", fontSize: 10, color: Colors.textPrimary },
+  giftNotifsPanel: { position: "absolute", right: 12, top: 80, gap: 6 },
+  giftNotifRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.75)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(204,255,0,0.3)" },
+  giftNotifEmoji: { fontSize: 18 },
+  giftNotifText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textPrimary },
 });

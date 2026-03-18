@@ -114,9 +114,9 @@ export default function MessagesScreen() {
     finally { setSearchLoading(false); }
   };
 
-  const openChat = (matchId: number) => {
+  const openChat = (userId: number) => {
     if (!isPremium) { setShowPremium(true); return; }
-    router.push(`/chat/${matchId}`);
+    router.push(`/chat/${userId}`);
   };
 
   const pendingCount = friendRequests.length;
@@ -148,7 +148,7 @@ export default function MessagesScreen() {
           <FlatList data={matches} keyExtractor={m => String(m.matchId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, gap: 10 }}
             renderItem={({ item: match, index }) => (
               <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-                <Pressable style={styles.card} onPress={() => openChat(match.matchId)}>
+                <Pressable style={styles.card} onPress={() => openChat(match.id)}>
                   <View style={styles.avatarWrap}>
                     <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
                     <View style={styles.onlineDot} />
@@ -210,7 +210,7 @@ export default function MessagesScreen() {
                   const matchItem = matches.find(m => m.id === friend.id);
                   return (
                     <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-                      <Pressable style={styles.card} onPress={() => { if (matchItem) openChat(matchItem.matchId); }}>
+                      <Pressable style={styles.card} onPress={() => { if (matchItem) openChat(matchItem.id); }}>
                         <Image source={{ uri: friend.photoUrl }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardName}>{friend.name}, {friend.age}</Text>

@@ -264,6 +264,38 @@ wss.on("connection", (ws) => {
         }
         break;
       }
+
+      case "live-chat": {
+        const liveInfoChat = peerLiveRole.get(peerId);
+        if (!liveInfoChat) break;
+        const roomChat = liveRooms.get(liveInfoChat.liveId);
+        if (!roomChat) break;
+        const chatPayload = { type: "live-chat", name: msg.name, text: msg.text, senderId: peerId };
+        const hostPeerChat = allPeers.get(roomChat.hostPeerId);
+        if (hostPeerChat) sendTo(hostPeerChat, chatPayload);
+        roomChat.viewerPeerIds.forEach((vId) => {
+          const v = allPeers.get(vId);
+          if (v) sendTo(v, chatPayload);
+        });
+        break;
+      }
+
+      case "live-gift": {
+        const liveInfoGift = peerLiveRole.get(peerId);
+        if (!liveInfoGift) break;
+        const roomGift = liveRooms.get(liveInfoGift.liveId);
+        if (!roomGift) break;
+        const giftPayload = { type: "live-gift", senderName: msg.senderName, emoji: msg.emoji, cost: msg.cost };
+        const hostPeerGift = allPeers.get(roomGift.hostPeerId);
+        if (hostPeerGift) sendTo(hostPeerGift, giftPayload);
+        roomGift.viewerPeerIds.forEach((vId) => {
+          if (vId !== peerId) {
+            const v = allPeers.get(vId);
+            if (v) sendTo(v, giftPayload);
+          }
+        });
+        break;
+      }
     }
   });
 

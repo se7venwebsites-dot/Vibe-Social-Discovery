@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
@@ -126,6 +127,7 @@ export default function LikesScreen() {
   const [showPremium, setShowPremium] = React.useState(false);
   const [selectedUser, setSelectedUser] = React.useState<User | null>(null);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
+  const router = useRouter();
 
   const { data: likers = [], isLoading } = useQuery<User[]>({
     queryKey: ["likes-received", currentUser?.id],
@@ -141,8 +143,12 @@ export default function LikesScreen() {
 
   const handleCardPress = (user: User) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedUser(user);
-    setShowPremium(true);
+    if (isPremium) {
+      router.push(`/user/${user.id}` as any);
+    } else {
+      setSelectedUser(user);
+      setShowPremium(true);
+    }
   };
 
   return (
@@ -210,7 +216,7 @@ export default function LikesScreen() {
           columnWrapperStyle={styles.row}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 90 }]}
           renderItem={({ item, index }) => (
-            <LikeCard user={item} index={index} onPress={() => {}} />
+            <LikeCard user={item} index={index} onPress={handleCardPress} />
           )}
           showsVerticalScrollIndicator={false}
         />

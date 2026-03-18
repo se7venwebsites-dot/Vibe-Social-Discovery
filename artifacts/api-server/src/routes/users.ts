@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, likesTable } from "@workspace/db";
-import { eq, and, notInArray, isNotNull } from "drizzle-orm";
+import { db, usersTable, likesTable, friendRequestsTable } from "@workspace/db";
+import { eq, and, notInArray, isNotNull, or, count } from "drizzle-orm";
 import { CITY_COORDS } from "./auth";
 
 const router: IRouter = Router();
@@ -95,6 +95,20 @@ router.post("/users/register", async (req, res) => {
   }).returning();
 
   res.json(toUserDto(user));
+});
+
+router.get("/users/:id/stats", async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const [swipeCount] = await db.select({ val: count() }).from(likesTable).where(eq(likesTable.fromUserId, id));
+  const [friendCount] = await db.select({ val: count() }).from(friendRequestsTable).where(
+    and(
+      or(eq(friendRequestsTable.fromUserId, id), eq(friendRequestsTable.toUserId, id)),
+      eq(friendRequestsTable.status, "accepted")
+    )
+  );
+  res.json({ swipeCount: swipeCount?.val ?? 0, friendCount: friendCount?.val ?? 0 });
 });
 
 router.get("/users/:id", async (req, res) => {

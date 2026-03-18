@@ -24,11 +24,17 @@ const CITIES_OPTIONS = ["all", "Warszawa", "Kraków", "Wrocław", "Poznań", "Gd
 
 const CAM_FILTERS = [
   { id: "none", label: "Normalny", css: "" },
+  { id: "beauty", label: "Beauty", css: "brightness(108%) contrast(95%) saturate(115%)" },
   { id: "bw", label: "B&W", css: "grayscale(100%)" },
   { id: "sepia", label: "Sepia", css: "sepia(80%)" },
-  { id: "cool", label: "Chłodny", css: "hue-rotate(180deg) saturate(120%)" },
-  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(105%)" },
-  { id: "vivid", label: "Żywy", css: "saturate(200%) contrast(110%)" },
+  { id: "cool", label: "Chłodny", css: "hue-rotate(190deg) saturate(140%) brightness(105%)" },
+  { id: "warm", label: "Ciepły", css: "hue-rotate(20deg) saturate(160%) brightness(108%)" },
+  { id: "vivid", label: "Żywy", css: "saturate(220%) contrast(115%)" },
+  { id: "neon", label: "Neon", css: "saturate(300%) contrast(120%) brightness(88%) hue-rotate(100deg)" },
+  { id: "vintage", label: "Vintage", css: "sepia(40%) saturate(80%) contrast(90%) brightness(95%)" },
+  { id: "fade", label: "Fade", css: "saturate(60%) contrast(80%) brightness(118%)" },
+  { id: "film", label: "Film", css: "grayscale(25%) contrast(112%) brightness(95%) sepia(15%)" },
+  { id: "glam", label: "Glam", css: "brightness(115%) contrast(105%) saturate(130%) hue-rotate(340deg)" },
 ];
 
 type Status = "idle" | "requesting-camera" | "waiting" | "connected" | "error";
@@ -178,7 +184,7 @@ export default function VideoScreen() {
         video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
-        video.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        video.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
         video.srcObject = stream;
         localContainer.appendChild(video);
       }
