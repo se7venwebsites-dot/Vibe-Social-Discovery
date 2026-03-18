@@ -282,23 +282,6 @@ export default function DiscoverScreen() {
         )}
       </View>
 
-      {displayStack.length > 0 && (
-        <View style={[styles.actionButtons, { paddingBottom: insets.bottom + 80 }]}>
-          <Pressable
-            style={[styles.actionBtn, styles.actionBtnNope]}
-            onPress={() => handleSwipe("left")}
-          >
-            <Feather name="x" size={28} color={Colors.danger} />
-          </Pressable>
-          <Pressable
-            style={[styles.actionBtn, styles.actionBtnLike]}
-            onPress={() => handleSwipe("right")}
-          >
-            <Feather name="zap" size={28} color={Colors.accent} />
-          </Pressable>
-        </View>
-      )}
-
       <PremiumModal
         visible={showPremium}
         onClose={() => setShowPremium(false)}
@@ -407,8 +390,4 @@ const styles = StyleSheet.create({
   emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 15, color: Colors.textSecondary, textAlign: "center" },
   refreshBtn: { marginTop: 8, backgroundColor: Colors.surface, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   refreshBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.accent },
-  actionButtons: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 32, paddingTop: 12 },
-  actionBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", borderWidth: 2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, shadowOpacity: 0.3 },
-  actionBtnNope: { borderColor: Colors.danger, backgroundColor: "rgba(255,59,92,0.08)", shadowColor: Colors.danger },
-  actionBtnLike: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.08)", shadowColor: Colors.accent },
 });

@@ -14,6 +14,7 @@ export function toUserDto(u: typeof usersTable.$inferSelect) {
     photoUrl: u.photoUrl,
     photos: u.photos ?? [],
     isPremium: u.isPremium,
+    isVerified: (u as any).isVerified ?? false,
     city: u.city,
     interests: u.interests ?? [],
   };
@@ -32,6 +33,20 @@ router.get("/users", async (req, res) => {
   ).limit(20);
 
   res.json(users.map(toUserDto));
+});
+
+// IMPORTANT: These specific routes must come BEFORE the generic /:id route
+router.get("/users/check-username/:username", async (req, res) => {
+  const raw = req.params.username.replace(/^@/, "").toLowerCase();
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, raw));
+  res.json({ available: !existing });
+});
+
+router.get("/users/by-username/:username", async (req, res) => {
+  const raw = req.params.username.replace(/^@/, "").toLowerCase();
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.username, raw));
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  res.json(toUserDto(user));
 });
 
 router.post("/users/register", async (req, res) => {

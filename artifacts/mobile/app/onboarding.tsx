@@ -10,11 +10,13 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Alert,
+  Image,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
@@ -26,11 +28,26 @@ const INTERESTS_OPTIONS = [
 ];
 const CITIES = ["Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
 
+async function uploadImageBase64(base64: string, mimeType: string): Promise<string> {
+  const uploadUrl = process.env.EXPO_PUBLIC_DOMAIN
+    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/upload`
+    : "/api/upload";
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base64, mimeType }),
+  });
+  if (!res.ok) throw new Error("Upload failed");
+  const data = await res.json();
+  return data.url as string;
+}
+
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { register } = useUserContext();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
@@ -39,6 +56,8 @@ export default function OnboardingScreen() {
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const [bio, setBio] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoPreview, setPhotoPreview] = useState("");
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
@@ -61,6 +80,36 @@ export default function OnboardingScreen() {
     }
   }, []);
 
+  const handlePickPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Brak dostępu", "Zezwól aplikacji na dostęp do galerii.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    if (!asset.base64) return;
+
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadImageBase64(asset.base64, asset.mimeType ?? "image/jpeg");
+      setPhotoUrl(url);
+      setPhotoPreview(asset.uri);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert("Błąd", "Nie udało się przesłać zdjęcia. Spróbuj ponownie.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   const canNext = () => {
     if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80;
     if (step === 1) return username.length >= 3 && usernameStatus === "available";
@@ -77,12 +126,21 @@ export default function OnboardingScreen() {
   const handleRegister = async () => {
     setLoading(true);
     try {
-      const photoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ccff00&color=000&size=400&bold=true`;
-      await register({ name: name.trim(), username, age: parseInt(age), bio: bio.trim(), photoUrl, photos: [], city: city || undefined, interests });
+      const finalPhotoUrl = photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ccff00&color=000&size=400&bold=true`;
+      await register({
+        name: name.trim(),
+        username,
+        age: parseInt(age),
+        bio: bio.trim(),
+        photoUrl: finalPhotoUrl,
+        photos: [],
+        city: city || undefined,
+        interests,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)");
     } catch (e: unknown) {
-      Alert.alert("Błąd", (e as Error).message || "Spróbuj ponownie.");
+      Alert.alert("Błąd rejestracji", (e as Error).message || "Spróbuj ponownie.");
     } finally { setLoading(false); }
   };
 
@@ -101,6 +159,8 @@ export default function OnboardingScreen() {
         </Animated.View>
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* Step 0: Basic info */}
           {step === 0 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Kim jesteś?</Text>
@@ -122,6 +182,7 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
+          {/* Step 1: Username */}
           {step === 1 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twój nick</Text>
@@ -150,6 +211,7 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
+          {/* Step 2: Bio */}
           {step === 2 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twoje bio</Text>
@@ -160,10 +222,34 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
+          {/* Step 3: Photo + Interests */}
           {step === 3 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
-              <Text style={styles.stepTitle}>Zainteresowania</Text>
-              <Text style={styles.stepSub}>Wybierz do 5 tagów (opcjonalnie).</Text>
+              <Text style={styles.stepTitle}>Zdjęcie profilowe</Text>
+              <Text style={styles.stepSub}>Wybierz swoje zdjęcie i zainteresowania.</Text>
+
+              {/* Photo picker */}
+              <Pressable style={styles.photoPickerBtn} onPress={handlePickPhoto} disabled={uploadingPhoto}>
+                {uploadingPhoto ? (
+                  <ActivityIndicator color={Colors.accent} size="large" />
+                ) : photoPreview ? (
+                  <Image source={{ uri: photoPreview }} style={styles.photoPickerPreview} />
+                ) : (
+                  <View style={styles.photoPickerEmpty}>
+                    <Feather name="camera" size={32} color={Colors.textMuted} />
+                    <Text style={styles.photoPickerText}>Wybierz zdjęcie z galerii</Text>
+                    <Text style={styles.photoPickerSub}>lub zostanie użyte automatyczne</Text>
+                  </View>
+                )}
+                {photoPreview ? (
+                  <View style={styles.photoPickerOverlay}>
+                    <Feather name="camera" size={20} color="#fff" />
+                    <Text style={styles.photoPickerChangeText}>Zmień</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+
+              <Text style={[styles.label, { marginTop: 8 }]}>Zainteresowania (max 5, opcjonalnie)</Text>
               <View style={styles.interestsGrid}>
                 {INTERESTS_OPTIONS.map(tag => {
                   const active = interests.includes(tag);
@@ -175,6 +261,7 @@ export default function OnboardingScreen() {
                   );
                 })}
               </View>
+
               <View style={styles.summaryBox}>
                 <Text style={styles.summaryTitle}>Podsumowanie</Text>
                 <Text style={styles.summaryName}>{name}, {age} • @{username}</Text>
@@ -192,7 +279,7 @@ export default function OnboardingScreen() {
             </Pressable>
           ) : <View style={{ width: 44 }} />}
           <Pressable
-            style={[styles.nextBtn, !canNext() && styles.nextBtnDisabled]}
+            style={[styles.nextBtn, (!canNext() || loading) && styles.nextBtnDisabled]}
             onPress={handleNext}
             disabled={!canNext() || loading}
           >
@@ -239,6 +326,13 @@ const styles = StyleSheet.create({
   tagActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   tagText: { fontFamily: "Montserrat_500Medium", fontSize: 13, color: Colors.textSecondary },
   tagTextActive: { color: Colors.black },
+  photoPickerBtn: { width: "100%", height: 200, borderRadius: 20, overflow: "hidden", backgroundColor: Colors.cardBg, borderWidth: 1, borderColor: Colors.border, alignItems: "center", justifyContent: "center" },
+  photoPickerEmpty: { alignItems: "center", gap: 8 },
+  photoPickerText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.textSecondary },
+  photoPickerSub: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
+  photoPickerPreview: { width: "100%", height: "100%", resizeMode: "cover" },
+  photoPickerOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.5)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10 },
+  photoPickerChangeText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: "#fff" },
   summaryBox: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Colors.border, gap: 6, marginTop: 8 },
   summaryTitle: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
   summaryName: { fontFamily: "Montserrat_700Bold", fontSize: 17, color: Colors.textPrimary },

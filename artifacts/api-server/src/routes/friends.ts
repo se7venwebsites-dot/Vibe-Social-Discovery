@@ -19,19 +19,6 @@ function toUserDto(u: typeof usersTable.$inferSelect) {
   };
 }
 
-router.get("/users/by-username/:username", async (req, res) => {
-  const raw = req.params.username.replace(/^@/, "").toLowerCase();
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.username, raw));
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  res.json(toUserDto(user));
-});
-
-router.get("/users/check-username/:username", async (req, res) => {
-  const raw = req.params.username.replace(/^@/, "").toLowerCase();
-  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, raw));
-  res.json({ available: !existing });
-});
-
 router.post("/friends/request", async (req, res) => {
   const { fromUserId, toUserId } = req.body;
   if (!fromUserId || !toUserId) { res.status(400).json({ error: "Missing fields" }); return; }
