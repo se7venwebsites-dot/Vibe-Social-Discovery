@@ -8,7 +8,6 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
 
 const server = createServer(app);
-
 const wss = new WebSocketServer({ server, path: "/api/ws" });
 
 interface Peer {
@@ -24,18 +23,17 @@ interface Peer {
   peerId: string;
 }
 
-// Random video chat state
 const waiting: Map<string, Peer> = new Map();
 const connected: Map<string, Peer> = new Map();
 
-// Live streaming state
 interface LiveRoom {
   hostPeerId: string;
   viewerPeerIds: Set<string>;
+  cohostPeerId?: string;
 }
 const liveRooms: Map<number, LiveRoom> = new Map();
 const allPeers: Map<string, Peer> = new Map();
-const peerLiveRole: Map<string, { liveId: number; role: "host" | "viewer" }> = new Map();
+const peerLiveRole: Map<string, { liveId: number; role: "host" | "viewer" | "cohost" }> = new Map();
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -50,25 +48,13 @@ function sendTo(peer: Peer, data: object) {
 function findMatch(seeker: Peer): Peer | undefined {
   for (const [id, candidate] of waiting) {
     if (id === seeker.peerId) continue;
-    const seekerWantsAge =
-      seeker.filterAgeMin != null && seeker.filterAgeMax != null
-        ? (candidate.age ?? 99) >= seeker.filterAgeMin && (candidate.age ?? 0) <= seeker.filterAgeMax
-        : true;
-    const candidateWantsAge =
-      candidate.filterAgeMin != null && candidate.filterAgeMax != null
-        ? (seeker.age ?? 99) >= candidate.filterAgeMin && (seeker.age ?? 0) <= candidate.filterAgeMax
-        : true;
-    const seekerWantsCity =
-      seeker.filterCity && seeker.filterCity !== "all"
-        ? candidate.city === seeker.filterCity
-        : true;
-    const candidateWantsCity =
-      candidate.filterCity && candidate.filterCity !== "all"
-        ? seeker.city === candidate.filterCity
-        : true;
-    if (seekerWantsAge && candidateWantsAge && seekerWantsCity && candidateWantsCity) {
-      return candidate;
-    }
+    const seekerWantsAge = seeker.filterAgeMin != null && seeker.filterAgeMax != null
+      ? (candidate.age ?? 99) >= seeker.filterAgeMin && (candidate.age ?? 0) <= seeker.filterAgeMax : true;
+    const candidateWantsAge = candidate.filterAgeMin != null && candidate.filterAgeMax != null
+      ? (seeker.age ?? 99) >= candidate.filterAgeMin && (seeker.age ?? 0) <= candidate.filterAgeMax : true;
+    const seekerWantsCity = seeker.filterCity && seeker.filterCity !== "all" ? candidate.city === seeker.filterCity : true;
+    const candidateWantsCity = candidate.filterCity && candidate.filterCity !== "all" ? seeker.city === candidate.filterCity : true;
+    if (seekerWantsAge && candidateWantsAge && seekerWantsCity && candidateWantsCity) return candidate;
   }
   return undefined;
 }
@@ -90,6 +76,7 @@ function cleanupLivePeer(peer: Peer) {
       room.viewerPeerIds.delete(peer.peerId);
       const host = allPeers.get(room.hostPeerId);
       if (host) sendTo(host, { type: "viewer-left", viewerPeerId: peer.peerId });
+      if (room.cohostPeerId === peer.peerId) room.cohostPeerId = undefined;
     }
   }
   peerLiveRole.delete(peer.peerId);
@@ -119,11 +106,7 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (raw) => {
     let msg: Record<string, unknown>;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      return;
-    }
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     switch (msg.type) {
       // ---- Random video chat ----
@@ -201,7 +184,6 @@ wss.on("connection", (ws) => {
         const role = msg.role as "host" | "viewer";
         peer.userId = msg.userId as number;
         peer.name = msg.name as string;
-
         if (role === "host") {
           const existing = liveRooms.get(liveId);
           if (existing) {
@@ -216,52 +198,93 @@ wss.on("connection", (ws) => {
           sendTo(peer, { type: "live-joined", liveId, peerId, role: "host" });
         } else {
           const room = liveRooms.get(liveId);
-          if (!room) {
-            sendTo(peer, { type: "live-error", error: "Live nie istnieje" });
-            break;
-          }
+          if (!room) { sendTo(peer, { type: "live-error", error: "Live nie istnieje" }); break; }
           room.viewerPeerIds.add(peerId);
           peerLiveRole.set(peerId, { liveId, role: "viewer" });
           sendTo(peer, { type: "live-joined", liveId, peerId, role: "viewer" });
           const hostPeer = allPeers.get(room.hostPeerId);
-          if (hostPeer) {
-            sendTo(hostPeer, { type: "viewer-joined", viewerPeerId: peerId, viewerName: peer.name });
-          }
+          if (hostPeer) sendTo(hostPeer, { type: "viewer-joined", viewerPeerId: peerId, viewerName: peer.name });
         }
         break;
       }
 
       case "live-offer": {
-        const targetPeerId = msg.targetPeerId as string;
-        const target = allPeers.get(targetPeerId);
+        const target = allPeers.get(msg.targetPeerId as string);
         if (target) sendTo(target, { type: "live-offer", offer: msg.offer, fromPeerId: peerId });
         break;
       }
-
       case "live-answer": {
-        const targetPeerId = msg.targetPeerId as string;
-        const target = allPeers.get(targetPeerId);
+        const target = allPeers.get(msg.targetPeerId as string);
         if (target) sendTo(target, { type: "live-answer", answer: msg.answer, fromPeerId: peerId });
         break;
       }
-
       case "live-ice": {
-        const targetPeerId = msg.targetPeerId as string;
-        const target = allPeers.get(targetPeerId);
+        const target = allPeers.get(msg.targetPeerId as string);
         if (target) sendTo(target, { type: "live-ice", candidate: msg.candidate, fromPeerId: peerId });
         break;
       }
 
-      case "leave-live": {
-        cleanupLivePeer(peer);
+      // ---- Stage (add viewer to live) ----
+      case "invite-to-stage": {
+        const liveInfo = peerLiveRole.get(peerId);
+        if (!liveInfo || liveInfo.role !== "host") break;
+        const room = liveRooms.get(liveInfo.liveId);
+        if (!room) break;
+        const targetPeerId = msg.targetPeerId as string;
+        if (room.viewerPeerIds.has(targetPeerId)) {
+          const target = allPeers.get(targetPeerId);
+          if (target) sendTo(target, { type: "stage-invite", hostPeerId: peerId, hostName: peer.name || "Prowadzący" });
+        }
+        break;
+      }
+      case "stage-offer": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "stage-offer", offer: msg.offer, fromPeerId: peerId });
+        break;
+      }
+      case "stage-answer": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "stage-answer", answer: msg.answer, fromPeerId: peerId });
+        break;
+      }
+      case "stage-ice": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "stage-ice", candidate: msg.candidate, fromPeerId: peerId });
+        break;
+      }
+      case "stage-leave": {
+        const liveInfo = peerLiveRole.get(peerId);
+        if (liveInfo) {
+          const room = liveRooms.get(liveInfo.liveId);
+          if (room) {
+            const host = allPeers.get(room.hostPeerId);
+            if (host) sendTo(host, { type: "stage-left", viewerPeerId: peerId });
+          }
+        }
         break;
       }
 
+      // ---- Co-host stream to viewers ----
+      case "cohost-offer": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "cohost-offer", offer: msg.offer, fromPeerId: peerId });
+        break;
+      }
+      case "cohost-answer": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "cohost-answer", answer: msg.answer, fromPeerId: peerId });
+        break;
+      }
+      case "cohost-ice": {
+        const target = allPeers.get(msg.targetPeerId as string);
+        if (target) sendTo(target, { type: "cohost-ice", candidate: msg.candidate, fromPeerId: peerId });
+        break;
+      }
+
+      case "leave-live": { cleanupLivePeer(peer); break; }
       case "end-live": {
         const liveInfo = peerLiveRole.get(peerId);
-        if (liveInfo && liveInfo.role === "host") {
-          cleanupLivePeer(peer);
-        }
+        if (liveInfo && liveInfo.role === "host") cleanupLivePeer(peer);
         break;
       }
 
@@ -289,10 +312,7 @@ wss.on("connection", (ws) => {
         const hostPeerGift = allPeers.get(roomGift.hostPeerId);
         if (hostPeerGift) sendTo(hostPeerGift, giftPayload);
         roomGift.viewerPeerIds.forEach((vId) => {
-          if (vId !== peerId) {
-            const v = allPeers.get(vId);
-            if (v) sendTo(v, giftPayload);
-          }
+          if (vId !== peerId) { const v = allPeers.get(vId); if (v) sendTo(v, giftPayload); }
         });
         break;
       }
@@ -301,10 +321,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => disconnectPeer(peer));
   ws.on("error", () => disconnectPeer(peer));
-
   sendTo(peer, { type: "connected", peerId });
 });
 
-server.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-});
+server.listen(port, () => { console.log(`Server listening on port ${port}`); });

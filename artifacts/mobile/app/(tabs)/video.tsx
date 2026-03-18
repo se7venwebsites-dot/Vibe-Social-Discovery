@@ -77,6 +77,7 @@ export default function VideoScreen() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const isInitiatorRef = useRef(false);
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const [activeCamFilter, setActiveCamFilter] = useState("none");
   const [showCamFilters, setShowCamFilters] = useState(false);
 
@@ -145,6 +146,7 @@ export default function VideoScreen() {
   const handlePartnerDisconnect = useCallback(() => {
     setPartnerInfo(null);
     setStatus("waiting");
+    pendingCandidatesRef.current = [];
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -154,6 +156,7 @@ export default function VideoScreen() {
   }, []);
 
   const cleanup = useCallback(() => {
+    pendingCandidatesRef.current = [];
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     if (localStreamRef.current) {
@@ -216,13 +219,20 @@ export default function VideoScreen() {
             setPartnerInfo({ name: msg.partnerName, age: msg.partnerAge, city: msg.partnerCity });
             setStatus("connected");
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            await setupWebRTC(msg.initiator, ws);
+            pendingCandidatesRef.current = [];
+            if (msg.initiator) {
+              await setupWebRTC(true, ws);
+            }
             break;
           }
           case "offer": {
             if (!pcRef.current) await setupWebRTC(false, ws);
             if (pcRef.current) {
               await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.offer));
+              for (const c of pendingCandidatesRef.current) {
+                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+              }
+              pendingCandidatesRef.current = [];
               const answer = await pcRef.current.createAnswer();
               await pcRef.current.setLocalDescription(answer);
               ws.send(JSON.stringify({ type: "answer", answer }));
@@ -232,12 +242,20 @@ export default function VideoScreen() {
           case "answer": {
             if (pcRef.current) {
               await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.answer));
+              for (const c of pendingCandidatesRef.current) {
+                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+              }
+              pendingCandidatesRef.current = [];
             }
             break;
           }
           case "ice-candidate": {
-            if (pcRef.current && msg.candidate) {
-              await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            if (msg.candidate) {
+              if (pcRef.current?.remoteDescription) {
+                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+              } else {
+                pendingCandidatesRef.current.push(msg.candidate);
+              }
             }
             break;
           }

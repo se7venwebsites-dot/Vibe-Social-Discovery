@@ -44,9 +44,18 @@ artifacts-monorepo/
 - **Design**: Dark #000000, neon yellow #CCFF00, Montserrat font
 
 ## WebSocket Signaling Server
-- Path: `/ws` on port 8080 (accessible via `wss://domain/api/ws`)
-- Handles WebRTC peer matching with age/city filters
-- Relays offer/answer/ICE candidates between matched peers
+- Path: `/api/ws` (accessible via `wss://domain/api/ws`)
+- Handles WebRTC peer matching with age/city filters for Omegle video chat
+- Relays offer/answer/ICE candidates between matched peers (with ICE candidate buffering)
+- Live streaming: host→viewer WebRTC with multi-viewer fan-out
+- Stage feature: host can invite viewers to stream alongside them (co-host)
+- Co-host distribution: when co-host joins, host fans out co-host stream to all viewers via separate PCs
+- Message types: join, next, offer, answer, ice-candidate, join-live, live-offer, live-answer, live-ice, invite-to-stage, stage-offer, stage-answer, stage-ice, stage-leave, cohost-offer, cohost-answer, cohost-ice
+
+## WebRTC Known Fixes Applied
+- **ICE candidate buffering**: Candidates are queued when remote description not yet set, flushed after setRemoteDescription — fixes grey screen and Omegle not connecting
+- **Omegle race condition**: Non-initiator no longer creates PC on `matched`; only creates PC lazily when `offer` arrives, preventing duplicate PeerConnections
+- **Live stream grey screen**: Fixed by ICE buffering; viewer PC is reused on renegotiation offers (not recreated)
 
 ## DB Tables
 - `users`: id, name, age, bio, photo_url, is_premium, city, interests[]

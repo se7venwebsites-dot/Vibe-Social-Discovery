@@ -193,6 +193,12 @@ function GiftPanel({ onSend, coins, disabled }: { onSend: (gift: typeof GIFTS[0]
   );
 }
 
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+];
+
 function LiveViewerModal({ live, visible, onClose, currentUser }: {
   live: Live | null;
   visible: boolean;
@@ -201,8 +207,16 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 }) {
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const cohostPcRef = useRef<RTCPeerConnection | null>(null);
+  const myStageStreamRef = useRef<MediaStream | null>(null);
   const myPeerIdRef = useRef<string>("");
+  const hostPeerIdRef = useRef<string>("");
+  const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+
   const [connected, setConnected] = useState(false);
+  const [cohostVisible, setCohostVisible] = useState(false);
+  const [onStage, setOnStage] = useState(false);
+  const [stageInvite, setStageInvite] = useState<{ hostPeerId: string; hostName: string } | null>(null);
   const [addedFriend, setAddedFriend] = useState(false);
   const [showGifts, setShowGifts] = useState(false);
   const [showChat, setShowChat] = useState(true);
@@ -213,23 +227,66 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
+  const setVideoSrc = (container: HTMLElement | null, stream: MediaStream, mirrored = false) => {
+    if (!container) return;
+    let v = container.querySelector("video") as HTMLVideoElement | null;
+    if (!v) {
+      v = document.createElement("video");
+      v.autoplay = true;
+      v.playsInline = true;
+      v.style.cssText = `width:100%;height:100%;object-fit:cover;${mirrored ? "transform:scaleX(-1);" : ""}`;
+      container.appendChild(v);
+    }
+    v.srcObject = stream;
+  };
+
   const cleanup = useCallback(() => {
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    if (cohostPcRef.current) { cohostPcRef.current.close(); cohostPcRef.current = null; }
+    if (myStageStreamRef.current) { myStageStreamRef.current.getTracks().forEach(t => t.stop()); myStageStreamRef.current = null; }
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
-    if (Platform.OS === "web") {
-      const container = document.getElementById("vibe-live-remote");
-      if (container) container.innerHTML = "";
-    }
+    pendingIceRef.current = [];
     setConnected(false);
+    setCohostVisible(false);
+    setOnStage(false);
+    setStageInvite(null);
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: -1 }) }).catch(() => {});
     }
   }, [live]);
 
+  const acceptStageInvite = useCallback(async () => {
+    const invite = stageInvite;
+    setStageInvite(null);
+    if (!invite || Platform.OS !== "web") return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      myStageStreamRef.current = stream;
+      const camContainer = document.getElementById("vibe-live-mycam");
+      setVideoSrc(camContainer, stream, true);
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      cohostPcRef.current = pc;
+      stream.getTracks().forEach(t => pc.addTrack(t, stream));
+      pc.onicecandidate = (e) => {
+        if (e.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "stage-ice", candidate: e.candidate, targetPeerId: invite.hostPeerId }));
+        }
+      };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      wsRef.current?.send(JSON.stringify({ type: "stage-offer", offer, targetPeerId: invite.hostPeerId }));
+      setOnStage(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert("Błąd", "Nie udało się uruchomić kamery.");
+    }
+  }, [stageInvite]);
+
   useEffect(() => {
     if (!visible || !live) return;
     if (Platform.OS !== "web") return;
 
+    pendingIceRef.current = [];
     fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: 1 }) }).catch(() => {});
 
     const ws = new WebSocket(WS_URL);
@@ -246,44 +303,75 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         myPeerIdRef.current = msg.peerId;
       }
 
-      if (msg.type === "live-joined") {
-        // Viewer joined, waiting for host offer
-      }
-
       if (msg.type === "live-offer") {
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] });
-        pcRef.current = pc;
-
-        pc.ontrack = (e) => {
-          const container = document.getElementById("vibe-live-remote");
-          if (container) {
-            let v = container.querySelector("video") as HTMLVideoElement | null;
-            if (!v) {
-              v = document.createElement("video");
-              v.autoplay = true;
-              v.playsInline = true;
-              v.style.cssText = "width:100%;height:100%;object-fit:cover;";
-              container.appendChild(v);
+        hostPeerIdRef.current = msg.fromPeerId as string;
+        let pc = pcRef.current;
+        if (!pc) {
+          pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+          pcRef.current = pc;
+          pc.ontrack = (e) => {
+            const container = document.getElementById("vibe-live-remote");
+            if (container) {
+              setVideoSrc(container, e.streams[0]);
+              setConnected(true);
             }
-            v.srcObject = e.streams[0];
-            setConnected(true);
-          }
-        };
-
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
-          }
-        };
-
+          };
+          pc.onicecandidate = (e) => {
+            if (e.candidate) {
+              ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
+            }
+          };
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+        for (const c of pendingIceRef.current) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+        }
+        pendingIceRef.current = [];
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         ws.send(JSON.stringify({ type: "live-answer", answer, targetPeerId: msg.fromPeerId }));
       }
 
-      if (msg.type === "live-ice" && pcRef.current) {
-        try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+      if (msg.type === "live-ice") {
+        if (pcRef.current?.remoteDescription) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+        } else {
+          pendingIceRef.current.push(msg.candidate);
+        }
+      }
+
+      if (msg.type === "stage-invite") {
+        setStageInvite({ hostPeerId: msg.hostPeerId as string, hostName: msg.hostName as string });
+      }
+
+      if (msg.type === "stage-answer") {
+        if (cohostPcRef.current) {
+          try { await cohostPcRef.current.setRemoteDescription(new RTCSessionDescription(msg.answer)); } catch {}
+        }
+      }
+
+      if (msg.type === "stage-ice") {
+        if (cohostPcRef.current) {
+          try { await cohostPcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+        }
+      }
+
+      if (msg.type === "cohost-offer") {
+        const coPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        coPc.ontrack = (e) => {
+          const container = document.getElementById("vibe-live-cohost");
+          if (container) {
+            setVideoSrc(container, e.streams[0]);
+            setCohostVisible(true);
+          }
+        };
+        coPc.onicecandidate = (e) => {
+          if (e.candidate) ws.send(JSON.stringify({ type: "cohost-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
+        };
+        await coPc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+        const answer = await coPc.createAnswer();
+        await coPc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "cohost-answer", answer, targetPeerId: msg.fromPeerId }));
       }
 
       if (msg.type === "live-chat") {
@@ -360,7 +448,21 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
       <View style={styles.liveViewerContainer}>
         {Platform.OS === "web" ? (
-          <View nativeID="vibe-live-remote" style={styles.liveVideoFill} />
+          <View style={styles.liveVideoFill}>
+            <View nativeID="vibe-live-remote" style={{ flex: 1 }} />
+            {cohostVisible && (
+              <View
+                nativeID="vibe-live-cohost"
+                style={styles.cohostPip}
+              />
+            )}
+            {onStage && (
+              <View
+                nativeID="vibe-live-mycam"
+                style={styles.myCamPip}
+              />
+            )}
+          </View>
         ) : (
           <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
@@ -373,6 +475,22 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
             <ActivityIndicator color={Colors.accent} size="large" />
             <Text style={styles.liveConnectingText}>Łączę z live...</Text>
           </View>
+        )}
+
+        {/* Stage invite dialog */}
+        {stageInvite && (
+          <Animated.View entering={FadeInDown} style={styles.stageInviteBox}>
+            <Text style={styles.stageInviteTitle}>🎤 Zaproszenie na scenę</Text>
+            <Text style={styles.stageInviteText}>{stageInvite.hostName} zaprasza Cię do live!</Text>
+            <View style={styles.stageInviteBtns}>
+              <Pressable style={styles.stageDeclineBtn} onPress={() => setStageInvite(null)}>
+                <Text style={styles.stageDeclineBtnText}>Odrzuć</Text>
+              </Pressable>
+              <Pressable style={styles.stageAcceptBtn} onPress={acceptStageInvite}>
+                <Text style={styles.stageAcceptBtnText}>Dołącz</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
         )}
 
         {/* Floating gifts */}
@@ -483,14 +601,21 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const wsRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const viewerPcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const pendingIceMap = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const cohostPcRef = useRef<RTCPeerConnection | null>(null);
+  const cohostStreamRef = useRef<MediaStream | null>(null);
+  const cohostViewerPcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const myPeerIdRef = useRef<string>("");
+
   const [broadcasting, setBroadcasting] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [viewers, setViewers] = useState<{ peerId: string; name: string }[]>([]);
+  const [cohostVisible, setCohostVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
   const [giftNotifs, setGiftNotifs] = useState<{ id: string; name: string; emoji: string }[]>([]);
   const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
   const [showChat, setShowChat] = useState(true);
+  const [showViewers, setShowViewers] = useState(false);
   const [activeFilter, setActiveFilter] = useState("none");
   const [showFilters, setShowFilters] = useState(false);
   const chatListRef = useRef<any>(null);
@@ -507,22 +632,55 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     }
   }, []);
 
+  const distributeCohost = useCallback(async (stream: MediaStream, ws: WebSocket) => {
+    for (const [viewerPeerId] of viewerPcsRef.current) {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        cohostViewerPcsRef.current.set(viewerPeerId, pc);
+        stream.getTracks().forEach(t => pc.addTrack(t, stream));
+        pc.onicecandidate = (e) => {
+          if (e.candidate && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "cohost-ice", candidate: e.candidate, targetPeerId: viewerPeerId }));
+          }
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({ type: "cohost-offer", offer, targetPeerId: viewerPeerId }));
+      } catch {}
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
     viewerPcsRef.current.forEach(pc => pc.close());
     viewerPcsRef.current.clear();
+    cohostViewerPcsRef.current.forEach(pc => pc.close());
+    cohostViewerPcsRef.current.clear();
+    pendingIceMap.current.clear();
+    if (cohostPcRef.current) { cohostPcRef.current.close(); cohostPcRef.current = null; }
+    cohostStreamRef.current = null;
     if (wsRef.current) { wsRef.current.send(JSON.stringify({ type: "end-live" })); wsRef.current.close(); wsRef.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
     if (Platform.OS === "web") {
       const c = document.getElementById("vibe-host-video");
       if (c) c.innerHTML = "";
+      const ch = document.getElementById("vibe-host-cohost");
+      if (ch) ch.innerHTML = "";
     }
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/end`, { method: "PATCH" }).catch(() => {});
     }
     setBroadcasting(false);
     setViewerCount(0);
+    setCohostVisible(false);
     queryClient.invalidateQueries({ queryKey: ["lives"] });
   }, [live]);
+
+  const inviteToStage = useCallback((viewerPeerId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "invite-to-stage", targetPeerId: viewerPeerId }));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  }, []);
 
   useEffect(() => {
     if (!visible || !live || Platform.OS !== "web") return;
@@ -548,11 +706,14 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         };
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
+
           if (msg.type === "connected") { myPeerIdRef.current = msg.peerId; }
+
           if (msg.type === "live-chat") {
             const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
             setChatMessages(prev => [...prev.slice(-99), chatMsg]);
           }
+
           if (msg.type === "live-gift") {
             const notifId = Math.random().toString(36).slice(2);
             const newNotif = { id: notifId, name: msg.senderName as string, emoji: msg.emoji as string };
@@ -562,13 +723,15 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             const fx = Math.random() * 55 + 5;
             setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
           }
+
           if (msg.type === "viewer-joined") {
             const viewerPeerId = msg.viewerPeerId as string;
             const viewerName = (msg.viewerName as string) || "Widz";
             setViewerCount(c => c + 1);
             setViewers(prev => [...prev, { peerId: viewerPeerId, name: viewerName }]);
-            const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
             viewerPcsRef.current.set(viewerPeerId, pc);
+            pendingIceMap.current.set(viewerPeerId, []);
             localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
             pc.onicecandidate = (e) => {
               if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: viewerPeerId }));
@@ -577,19 +740,102 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             await pc.setLocalDescription(offer);
             ws.send(JSON.stringify({ type: "live-offer", offer, targetPeerId: viewerPeerId }));
           }
+
           if (msg.type === "live-answer") {
-            const pc = viewerPcsRef.current.get(msg.fromPeerId);
+            const viewerPeerId = msg.fromPeerId as string;
+            const pc = viewerPcsRef.current.get(viewerPeerId);
+            if (pc) {
+              try {
+                await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+                const pending = pendingIceMap.current.get(viewerPeerId) || [];
+                for (const c of pending) {
+                  try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+                }
+                pendingIceMap.current.delete(viewerPeerId);
+              } catch {}
+            }
+          }
+
+          if (msg.type === "live-ice") {
+            const viewerPeerId = msg.fromPeerId as string;
+            const pc = viewerPcsRef.current.get(viewerPeerId);
+            if (pc) {
+              if (pc.remoteDescription) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+              } else {
+                const pending = pendingIceMap.current.get(viewerPeerId) || [];
+                pending.push(msg.candidate);
+                pendingIceMap.current.set(viewerPeerId, pending);
+              }
+            }
+          }
+
+          if (msg.type === "viewer-left") {
+            const leftPeerId = msg.viewerPeerId as string;
+            const pc = viewerPcsRef.current.get(leftPeerId);
+            if (pc) { pc.close(); viewerPcsRef.current.delete(leftPeerId); }
+            const cPc = cohostViewerPcsRef.current.get(leftPeerId);
+            if (cPc) { cPc.close(); cohostViewerPcsRef.current.delete(leftPeerId); }
+            pendingIceMap.current.delete(leftPeerId);
+            setViewerCount(c => Math.max(0, c - 1));
+            setViewers(prev => prev.filter(v => v.peerId !== leftPeerId));
+          }
+
+          if (msg.type === "stage-offer") {
+            const cohostPeerId = msg.fromPeerId as string;
+            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+            cohostPcRef.current = pc;
+            pc.ontrack = (e) => {
+              cohostStreamRef.current = e.streams[0];
+              const container = document.getElementById("vibe-host-cohost");
+              if (container) {
+                let v = container.querySelector("video") as HTMLVideoElement | null;
+                if (!v) {
+                  v = document.createElement("video");
+                  v.autoplay = true; v.playsInline = true;
+                  v.style.cssText = "width:100%;height:100%;object-fit:cover;";
+                  container.appendChild(v);
+                }
+                v.srcObject = e.streams[0];
+                setCohostVisible(true);
+              }
+              distributeCohost(e.streams[0], ws);
+            };
+            pc.onicecandidate = (e) => {
+              if (e.candidate) ws.send(JSON.stringify({ type: "stage-ice", candidate: e.candidate, targetPeerId: cohostPeerId }));
+            };
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: "stage-answer", answer, targetPeerId: cohostPeerId }));
+          }
+
+          if (msg.type === "stage-ice") {
+            if (cohostPcRef.current) {
+              try { await cohostPcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+            }
+          }
+
+          if (msg.type === "stage-left") {
+            if (cohostPcRef.current) { cohostPcRef.current.close(); cohostPcRef.current = null; }
+            cohostStreamRef.current = null;
+            cohostViewerPcsRef.current.forEach(pc => pc.close());
+            cohostViewerPcsRef.current.clear();
+            setCohostVisible(false);
+            const ch = document.getElementById("vibe-host-cohost");
+            if (ch) ch.innerHTML = "";
+          }
+
+          if (msg.type === "cohost-answer") {
+            const pc = cohostViewerPcsRef.current.get(msg.fromPeerId as string);
             if (pc) { try { await pc.setRemoteDescription(new RTCSessionDescription(msg.answer)); } catch {} }
           }
-          if (msg.type === "live-ice") {
-            const pc = viewerPcsRef.current.get(msg.fromPeerId);
-            if (pc) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {} }
-          }
-          if (msg.type === "viewer-left") {
-            const pc = viewerPcsRef.current.get(msg.viewerPeerId as string);
-            if (pc) { pc.close(); viewerPcsRef.current.delete(msg.viewerPeerId as string); }
-            setViewerCount(c => Math.max(0, c - 1));
-            setViewers(prev => prev.filter(v => v.peerId !== msg.viewerPeerId));
+
+          if (msg.type === "cohost-ice") {
+            const pc = cohostViewerPcsRef.current.get(msg.fromPeerId as string);
+            if (pc && pc.remoteDescription) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+            }
           }
         };
         ws.onclose = () => setBroadcasting(false);
@@ -608,7 +854,12 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
       <View style={styles.liveViewerContainer}>
         {Platform.OS === "web" ? (
-          <View nativeID="vibe-host-video" style={styles.liveVideoFill} />
+          <View style={styles.liveVideoFill}>
+            <View nativeID="vibe-host-video" style={{ flex: 1 }} />
+            {cohostVisible && (
+              <View nativeID="vibe-host-cohost" style={styles.cohostPip} />
+            )}
+          </View>
         ) : (
           <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
@@ -623,20 +874,38 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             <Text style={styles.liveBadgeText}>{broadcasting ? "LIVE" : "Łączę..."}</Text>
           </View>
           <View style={{ flex: 1 }} />
-          {viewers.length > 0 && (
-            <View style={styles.viewerPillRow}>
-              {viewers.slice(-3).map(v => (
-                <View key={v.peerId} style={styles.viewerPill}>
-                  <Text style={styles.viewerPillText}>{v.name.slice(0, 8)}</Text>
-                </View>
-              ))}
-            </View>
-          )}
+          <Pressable
+            style={[styles.viewersToggleBtn, showViewers && styles.liveIconBtnActive]}
+            onPress={() => { setShowViewers(s => !s); Haptics.selectionAsync(); }}
+          >
+            <Feather name="users" size={14} color={showViewers ? Colors.black : Colors.textPrimary} />
+            <Text style={[styles.viewerToggleBtnText, showViewers && { color: Colors.black }]}>{viewerCount}</Text>
+          </Pressable>
           <View style={styles.liveViewerCount}>
             <Feather name="eye" size={13} color={Colors.textPrimary} />
             <Text style={styles.liveViewerCountText}>{viewerCount}</Text>
           </View>
         </View>
+
+        {/* Viewers panel with stage invite */}
+        {showViewers && viewers.length > 0 && (
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.viewersList}>
+            <Text style={styles.viewersListTitle}>Widzowie</Text>
+            {viewers.map(v => (
+              <View key={v.peerId} style={styles.viewerRow}>
+                <View style={styles.viewerAvatarDot} />
+                <Text style={styles.viewerRowName} numberOfLines={1}>{v.name}</Text>
+                <Pressable
+                  style={styles.inviteStageBtn}
+                  onPress={() => inviteToStage(v.peerId)}
+                >
+                  <Feather name="mic" size={12} color={Colors.black} />
+                  <Text style={styles.inviteStageBtnText}>Dodaj</Text>
+                </Pressable>
+              </View>
+            ))}
+          </Animated.View>
+        )}
 
         {/* Floating gifts */}
         {floatingGifts.map(g => (
@@ -660,7 +929,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           </View>
         )}
 
-        {/* Chat panel (host view - read only with toggle) */}
+        {/* Chat panel */}
         {showChat && (
           <View style={[styles.chatPanel, styles.chatPanelHost]}>
             <FlatList
@@ -972,4 +1241,23 @@ const styles = StyleSheet.create({
   giftNotifRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.75)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(204,255,0,0.3)" },
   giftNotifEmoji: { fontSize: 18 },
   giftNotifText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textPrimary },
+  cohostPip: { position: "absolute", bottom: 120, right: 16, width: 130, height: 180, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: Colors.accent, backgroundColor: "#111" },
+  myCamPip: { position: "absolute", bottom: 120, left: 16, width: 110, height: 150, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#111" },
+  stageInviteBox: { position: "absolute", bottom: 120, left: 20, right: 20, backgroundColor: "rgba(20,20,20,0.97)", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.accent, gap: 10, zIndex: 300 },
+  stageInviteTitle: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.textPrimary, textAlign: "center" },
+  stageInviteText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  stageInviteBtns: { flexDirection: "row", gap: 10, justifyContent: "center" },
+  stageDeclineBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center" },
+  stageDeclineBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textSecondary },
+  stageAcceptBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.accent, alignItems: "center" },
+  stageAcceptBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.black },
+  viewersToggleBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", marginRight: 8 },
+  viewerToggleBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textPrimary },
+  viewersList: { position: "absolute", top: 60, right: 16, width: 220, backgroundColor: "rgba(15,15,15,0.96)", borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 12, gap: 8, zIndex: 200 },
+  viewersListTitle: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.textPrimary, marginBottom: 4 },
+  viewerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  viewerAvatarDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accent },
+  viewerRowName: { flex: 1, fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textPrimary },
+  inviteStageBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.accent, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  inviteStageBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
 });
