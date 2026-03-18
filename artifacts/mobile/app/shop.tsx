@@ -21,22 +21,22 @@ import Colors from "@/constants/colors";
 const COINS_KEY = "vibe_coins";
 
 const PACKAGES = [
-  { id: "p500", coins: 500, price: "4,99 zł", bonus: "", popular: false, color: Colors.surface },
-  { id: "p2000", coins: 2000, price: "14,99 zł", bonus: "+200 bonus", popular: false, color: Colors.surface },
-  { id: "p5000", coins: 5000, price: "29,99 zł", bonus: "+500 bonus", popular: true, color: "rgba(204,255,0,0.08)" },
-  { id: "p12000", coins: 12000, price: "59,99 zł", bonus: "+2000 bonus", popular: false, color: Colors.surface },
-  { id: "p30000", coins: 30000, price: "119,99 zł", bonus: "+5000 bonus 🔥", popular: false, color: Colors.surface },
+  { id: "p300", coins: 300, price: "4,99 zł", bonus: "", popular: false, color: Colors.surface },
+  { id: "p1200", coins: 1200, price: "14,99 zł", bonus: "+100 bonus", popular: false, color: Colors.surface },
+  { id: "p3000", coins: 3000, price: "29,99 zł", bonus: "+300 bonus", popular: true, color: "rgba(204,255,0,0.08)" },
+  { id: "p7500", coins: 7500, price: "59,99 zł", bonus: "+1000 bonus", popular: false, color: Colors.surface },
+  { id: "p18000", coins: 18000, price: "119,99 zł", bonus: "+3000 bonus 🔥", popular: false, color: Colors.surface },
 ];
 
 const GIFT_PRICES = [
-  { emoji: "❤️", label: "Serduszko", cost: 30 },
-  { emoji: "🌹", label: "Róża", cost: 75 },
-  { emoji: "🔥", label: "Ogień", cost: 150 },
-  { emoji: "⭐", label: "Gwiazdka", cost: 200 },
-  { emoji: "💎", label: "Diament", cost: 400 },
-  { emoji: "🌈", label: "Tęcza", cost: 800 },
-  { emoji: "👑", label: "Korona", cost: 1500 },
-  { emoji: "🚀", label: "Rakieta", cost: 3000 },
+  { emoji: "❤️", label: "Serduszko", cost: 60 },
+  { emoji: "🌹", label: "Róża", cost: 150 },
+  { emoji: "🔥", label: "Ogień", cost: 300 },
+  { emoji: "⭐", label: "Gwiazdka", cost: 400 },
+  { emoji: "💎", label: "Diament", cost: 800 },
+  { emoji: "🌈", label: "Tęcza", cost: 1600 },
+  { emoji: "👑", label: "Korona", cost: 3000 },
+  { emoji: "🚀", label: "Rakieta", cost: 6000 },
 ];
 
 export default function ShopScreen() {

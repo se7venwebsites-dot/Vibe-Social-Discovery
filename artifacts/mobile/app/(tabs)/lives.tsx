@@ -26,14 +26,14 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   : `ws://localhost:8080/ws`;
 
 const GIFTS = [
-  { id: "heart", emoji: "❤️", label: "Serce", cost: 30, size: 34 },
-  { id: "rose", emoji: "🌹", label: "Róża", cost: 75, size: 34 },
-  { id: "fire", emoji: "🔥", label: "Ogień", cost: 150, size: 34 },
-  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 200, size: 36 },
-  { id: "diamond", emoji: "💎", label: "Diament", cost: 400, size: 38 },
-  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 800, size: 38 },
-  { id: "crown", emoji: "👑", label: "Korona", cost: 1500, size: 40 },
-  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 3000, size: 42 },
+  { id: "heart", emoji: "❤️", label: "Serce", cost: 60, size: 34 },
+  { id: "rose", emoji: "🌹", label: "Róża", cost: 150, size: 34 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 300, size: 34 },
+  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 400, size: 36 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 800, size: 38 },
+  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 1600, size: 38 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 3000, size: 40 },
+  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 6000, size: 42 },
 ];
 
 const CAM_FILTERS = [
