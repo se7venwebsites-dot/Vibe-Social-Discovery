@@ -448,17 +448,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     peer.on("open", async () => {
       let offeringStream = new MediaStream();
       try {
-        const cam = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 2 }, height: { ideal: 2 } }, audio: true });
-        cam.getVideoTracks().forEach(t => { t.enabled = false; offeringStream.addTrack(t); });
-        cam.getAudioTracks().forEach(t => offeringStream.addTrack(t));
-      } catch {
-        try {
-          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const dest = audioCtx.createMediaStreamDestination();
-          dest.stream.getAudioTracks().forEach(t => offeringStream.addTrack(t));
-        } catch {}
-      }
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        dest.stream.getAudioTracks().forEach(t => offeringStream.addTrack(t));
+      } catch {}
       
+      console.warn("VIEWER OFFER:", offeringStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" "));
       const call = peer.call(hostPeerJsId, offeringStream);
       if (!call) return;
       viewerCallRef.current = call;
@@ -1060,7 +1055,13 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         const vTracks = stream.getVideoTracks();
         const aTracks = stream.getAudioTracks();
         console.warn(`HOST ANSWER: v=${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a=${aTracks.length}`);
-        call.answer(stream);
+        
+        const answerStream = new MediaStream();
+        vTracks.forEach(t => answerStream.addTrack(t));
+        aTracks.forEach(t => answerStream.addTrack(t));
+        console.warn(`HOST ANSWER RECONSTRUCTED: ${answerStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" ")}`);
+        
+        call.answer(answerStream);
         setViewerCount(c => c + 1);
         call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
         call.on("error", () => setViewerCount(c => Math.max(0, c - 1)));
