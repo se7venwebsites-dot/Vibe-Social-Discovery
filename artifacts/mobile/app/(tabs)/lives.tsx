@@ -163,15 +163,16 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
 
     const vTracks = stream.getVideoTracks();
     const aTracks = stream.getAudioTracks();
-    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active}`);
+    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active} box:${container.offsetWidth}x${container.offsetHeight}`);
 
     const video = document.createElement("video");
     video.autoplay = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;background:#000;";
+    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:#000;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
+    container.style.position = "relative";
     container.appendChild(video);
 
     if (externalRef) externalRef.current = video;
@@ -180,9 +181,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     video.muted = true;
     video.play().then(() => {
       if (!muted) video.muted = false;
-      setDbg(prev => prev + " PLAYING w=" + video.videoWidth + " h=" + video.videoHeight);
+      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight} el=${video.offsetWidth}x${video.offsetHeight}`);
     }).catch((e) => {
-      setDbg(prev => prev + " PLAY_ERR:" + e.message);
+      setDbg(prev => prev + " ERR:" + e.message);
       video.muted = true;
       video.play().catch(() => {});
     });
@@ -195,8 +196,8 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
   }, [stream, muted, mirrored, filter, elId]);
 
   return (
-    <View style={{ flex: 1, width: "100%", height: "100%" }}>
-      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
+    <View style={{ flex: 1, width: "100%", height: "100%", overflow: "visible" as any }}>
+      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%", overflow: "visible" as any }} />
       <Text style={{ position: "absolute", top: 40, left: 10, right: 10, color: "#0f0", fontSize: 11, backgroundColor: "rgba(0,0,0,0.7)", padding: 4, zIndex: 9999 }}>
         DBG[{elId}]: {dbg}
       </Text>
