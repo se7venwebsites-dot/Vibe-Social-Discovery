@@ -137,17 +137,16 @@ function buildPeerConfig(iceServers: object[]) {
   };
 }
 
-function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", videoRef: externalRef }: {
+function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", videoRef: externalRef, elId }: {
   stream: MediaStream | null;
   muted?: boolean;
   mirrored?: boolean;
   filter?: string;
   videoRef?: React.MutableRefObject<any>;
+  elId: string;
 }) {
-  const containerRef = useRef<any>(null);
-
   useEffect(() => {
-    const container = containerRef.current as HTMLElement | null;
+    const container = document.getElementById(elId);
     if (!container) return;
 
     container.innerHTML = "";
@@ -160,10 +159,7 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     video.autoplay = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.width = "100%";
-    video.style.height = "100%";
-    video.style.objectFit = "cover";
-    video.style.display = "block";
+    video.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;background:#000;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
     container.appendChild(video);
@@ -184,9 +180,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
       video.srcObject = null;
       container.innerHTML = "";
     };
-  }, [stream, muted, mirrored, filter]);
+  }, [stream, muted, mirrored, filter, elId]);
 
-  return <View ref={containerRef} style={{ flex: 1, width: "100%", height: "100%" }} />;
+  return <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />;
 }
 
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
@@ -620,7 +616,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
           <View style={StyleSheet.absoluteFill}>
-            <WebVideoEl stream={remoteStream} muted={false} />
+            <WebVideoEl stream={remoteStream} muted={false} elId="vibe-live-viewer-video" />
           </View>
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
@@ -773,12 +769,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
         {cohostVisible && Platform.OS === "web" && (
           <View style={[styles.cohostPip, { overflow: "hidden" }]}>
-            <WebVideoEl stream={cohostStream} muted={false} />
+            <WebVideoEl stream={cohostStream} muted={false} elId="vibe-live-cohost-video" />
           </View>
         )}
         {onStage && Platform.OS === "web" && (
           <View style={[styles.myCamPip, { overflow: "hidden" }]}>
-            <WebVideoEl stream={myStageStream} muted={true} mirrored={true} />
+            <WebVideoEl stream={myStageStream} muted={true} mirrored={true} elId="vibe-live-host-cam-video" />
           </View>
         )}
 
@@ -1056,6 +1052,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
               mirrored={true}
               videoRef={hostVideoRef}
               filter={CAM_FILTERS.find(f => f.id === activeFilter)?.css || ""}
+              elId="vibe-host-main-video"
             />
           </View>
         ) : (
@@ -1182,7 +1179,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
         {cohostVisible && Platform.OS === "web" && (
           <View style={[styles.cohostPip, { overflow: "hidden" }]}>
-            <WebVideoEl stream={cohostStream} muted={false} />
+            <WebVideoEl stream={cohostStream} muted={false} elId="vibe-host-cohost-video" />
           </View>
         )}
 

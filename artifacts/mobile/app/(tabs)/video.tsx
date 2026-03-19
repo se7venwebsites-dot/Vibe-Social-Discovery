@@ -91,16 +91,15 @@ function NotWebFallback() {
   );
 }
 
-function WebVideoEl({ stream, muted = false, mirrored = false, filter = "" }: {
+function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId }: {
   stream: MediaStream | null;
   muted?: boolean;
   mirrored?: boolean;
   filter?: string;
+  elId: string;
 }) {
-  const containerRef = useRef<any>(null);
-
   useEffect(() => {
-    const container = containerRef.current as HTMLElement | null;
+    const container = document.getElementById(elId);
     if (!container) return;
 
     container.innerHTML = "";
@@ -110,10 +109,7 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "" }: {
     video.autoplay = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.width = "100%";
-    video.style.height = "100%";
-    video.style.objectFit = "cover";
-    video.style.display = "block";
+    video.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;background:#000;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
     container.appendChild(video);
@@ -131,9 +127,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "" }: {
       video.srcObject = null;
       container.innerHTML = "";
     };
-  }, [stream, muted, mirrored, filter]);
+  }, [stream, muted, mirrored, filter, elId]);
 
-  return <View ref={containerRef} style={{ flex: 1, width: "100%", height: "100%" }} />;
+  return <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />;
 }
 
 export default function VideoScreen() {
@@ -457,7 +453,7 @@ export default function VideoScreen() {
             <View style={styles.remoteVideoWrap}>
               <View style={styles.remoteVideoInner}>
                 {remoteStream && (
-                  <WebVideoEl stream={remoteStream} muted={false} mirrored={false} />
+                  <WebVideoEl stream={remoteStream} muted={false} mirrored={false} elId="vibe-remote-video" />
                 )}
               </View>
               {status === "waiting" && (
@@ -490,6 +486,7 @@ export default function VideoScreen() {
                     muted={true}
                     mirrored={true}
                     filter={activeFilter?.css || ""}
+                    elId="vibe-local-video"
                   />
                 )}
               </View>
