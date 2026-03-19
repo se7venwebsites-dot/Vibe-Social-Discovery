@@ -436,53 +436,43 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     }
   }, [stageInvite]);
 
-  const setupViewerPeer = useCallback(async () => {
+  const handleHostOffer = useCallback(async (offer: RTCSessionDescriptionInit, hostWsPeerId: string) => {
     if (Platform.OS !== "web") return;
     const iceServers = await getIceServers();
-    const { Peer } = (await import("peerjs")) as any;
-    const peer = new Peer(buildPeerConfig(iceServers));
-    viewerPeerRef.current = peer;
+    const pc = new RTCPeerConnection({ iceServers } as RTCConfiguration);
+    pcRef.current = pc;
 
-    peer.on("error", (err: any) => {
-      console.warn("Viewer PeerJS error:", err.type, err.message);
-      if (err.type !== "server-error") {
-        Alert.alert("Błąd połączenia", "Nie można połączyć się z hostem live.");
-        cleanup();
-        onClose();
+    pc.ontrack = (e) => {
+      console.warn("VIEWER ontrack:", e.track.kind, e.track.readyState);
+      const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();
+      setConnected(true);
+      setRemoteStream(s);
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && wsRef.current) {
+        wsRef.current.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: hostWsPeerId }));
       }
-    });
+    };
 
-    peer.on("open", (viewerPeerJsId: string) => {
-      console.warn("VIEWER PEER READY:", viewerPeerJsId);
-      wsRef.current?.send(JSON.stringify({ type: "viewer-peer-ready", viewerPeerJsId }));
-    });
-
-    peer.on("call", (call: any) => {
-      console.warn("VIEWER: HOST IS CALLING ME");
-      let answerStream = new MediaStream();
-      try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const dest = audioCtx.createMediaStreamDestination();
-        dest.stream.getAudioTracks().forEach(t => answerStream.addTrack(t));
-      } catch {}
-      call.answer(answerStream);
-      viewerCallRef.current = call;
-      call.on("stream", (rs: MediaStream) => {
-        console.warn("VIEWER GOT STREAM:", rs.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" "));
-        setConnected(true);
-        setRemoteStream(rs);
-      });
-      call.on("close", () => {
-        Alert.alert("Live zakończony", "Gospodarz zakończył transmisję.");
-        cleanup();
-        onClose();
-      });
-      call.on("error", () => {
+    pc.oniceconnectionstatechange = () => {
+      console.warn("VIEWER ICE state:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
         Alert.alert("Błąd", "Połączenie z hostem zostało przerwane.");
         cleanup();
         onClose();
-      });
-    });
+      }
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    wsRef.current?.send(JSON.stringify({ type: "live-answer", answer, targetPeerId: hostWsPeerId }));
+
+    for (const ice of pendingIceRef.current) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(ice)); } catch {}
+    }
+    pendingIceRef.current = [];
   }, [cleanup, onClose]);
 
   useEffect(() => {
@@ -507,7 +497,19 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "live-joined") {
-        setupViewerPeer();
+        wsRef.current?.send(JSON.stringify({ type: "viewer-peer-ready", viewerPeerJsId: "unused" }));
+      }
+
+      if (msg.type === "live-offer") {
+        handleHostOffer(msg.offer as RTCSessionDescriptionInit, msg.fromPeerId as string);
+      }
+
+      if (msg.type === "live-ice") {
+        if (pcRef.current && pcRef.current.remoteDescription) {
+          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
+        } else {
+          pendingIceRef.current.push(msg.candidate);
+        }
       }
 
       if (msg.type === "stage-invite") {
@@ -1008,14 +1010,46 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           }
 
           if (msg.type === "viewer-peer-ready") {
-            const viewerPeerJsId = msg.viewerPeerJsId as string;
-            console.warn("HOST: calling viewer", viewerPeerJsId, "with stream v:", stream.getVideoTracks().length, "a:", stream.getAudioTracks().length);
-            const call = peer.call(viewerPeerJsId, stream);
-            if (call) {
-              setViewerCount(c => c + 1);
-              call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
-              call.on("error", () => setViewerCount(c => Math.max(0, c - 1)));
-            }
+            const viewerWsId = msg.viewerWsPeerId as string;
+            console.warn("HOST: creating RTCPeerConnection for viewer", viewerWsId, "stream v:", stream.getVideoTracks().length, "a:", stream.getAudioTracks().length);
+            const viewerIce = await getIceServers();
+            const vpc = new RTCPeerConnection({ iceServers: viewerIce } as RTCConfiguration);
+            
+            stream.getTracks().forEach(t => {
+              vpc.addTrack(t, stream);
+              console.warn("HOST: added track", t.kind, t.readyState);
+            });
+
+            vpc.onicecandidate = (e) => {
+              if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: viewerWsId }));
+            };
+            vpc.oniceconnectionstatechange = () => {
+              console.warn("HOST ICE state for viewer:", vpc.iceConnectionState);
+              if (vpc.iceConnectionState === "failed" || vpc.iceConnectionState === "disconnected") {
+                setViewerCount(c => Math.max(0, c - 1));
+                vpc.close();
+              }
+            };
+
+            const offer = await vpc.createOffer();
+            await vpc.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: "live-offer", offer, targetPeerId: viewerWsId }));
+            setViewerCount(c => c + 1);
+
+            const handleAnswer = async (event: MessageEvent) => {
+              try {
+                const m = JSON.parse(event.data);
+                if (m.type === "live-answer" && m.fromPeerId === viewerWsId) {
+                  await vpc.setRemoteDescription(new RTCSessionDescription(m.answer));
+                }
+                if (m.type === "live-ice" && m.fromPeerId === viewerWsId) {
+                  if (vpc.remoteDescription) {
+                    try { await vpc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch {}
+                  }
+                }
+              } catch {}
+            };
+            ws.addEventListener("message", handleAnswer);
           }
 
           if (msg.type === "viewer-left") {
