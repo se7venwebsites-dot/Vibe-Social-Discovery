@@ -97,43 +97,43 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "" }: {
   mirrored?: boolean;
   filter?: string;
 }) {
-  const videoRef = useRef<any>(null);
+  const containerRef = useRef<any>(null);
 
   useEffect(() => {
-    const v = videoRef.current as HTMLVideoElement | null;
-    if (!v) return;
-    if (!stream) {
-      v.srcObject = null;
-      return;
-    }
-    v.srcObject = stream;
-    v.muted = true;
-    v.play().then(() => {
-      if (!muted) v.muted = false;
+    const container = containerRef.current as HTMLElement | null;
+    if (!container) return;
+
+    container.innerHTML = "";
+    if (!stream) return;
+
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.objectFit = "cover";
+    video.style.display = "block";
+    if (mirrored) video.style.transform = "scaleX(-1)";
+    if (filter) video.style.filter = filter;
+    container.appendChild(video);
+
+    video.srcObject = stream;
+    video.muted = true;
+    video.play().then(() => {
+      if (!muted) video.muted = false;
     }).catch(() => {
-      v.muted = true;
-      v.play().catch(() => {});
+      video.muted = true;
+      video.play().catch(() => {});
     });
-  }, [stream, muted]);
 
-  useEffect(() => {
-    const v = videoRef.current as HTMLVideoElement | null;
-    if (v) v.style.filter = filter;
-  }, [filter]);
+    return () => {
+      video.srcObject = null;
+      container.innerHTML = "";
+    };
+  }, [stream, muted, mirrored, filter]);
 
-  return React.createElement("video", {
-    ref: videoRef,
-    autoPlay: true,
-    playsInline: true,
-    muted: muted,
-    style: {
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-      transform: mirrored ? "scaleX(-1)" : "none",
-      display: "block",
-    },
-  });
+  return <View ref={containerRef} style={{ flex: 1, width: "100%", height: "100%" }} />;
 }
 
 export default function VideoScreen() {
