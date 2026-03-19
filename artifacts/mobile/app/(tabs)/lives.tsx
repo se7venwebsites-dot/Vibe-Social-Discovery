@@ -42,22 +42,6 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
   : `ws://localhost:8080/api/ws`;
 
-const PEER_CONFIG = {
-  host: "0.peerjs.com",
-  port: 443,
-  secure: true,
-  path: "/",
-  config: {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-    ],
-  },
-};
-
 const GIFTS = [
   { id: "heart", emoji: "❤️", label: "Serce", cost: 60 },
   { id: "rose", emoji: "🌹", label: "Róża", cost: 150 },
@@ -127,6 +111,22 @@ const ICE_SERVERS = [
   { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
+
+const PEER_CONFIG = process.env.EXPO_PUBLIC_DOMAIN
+  ? {
+      host: process.env.EXPO_PUBLIC_DOMAIN,
+      port: 443,
+      secure: true,
+      path: "/api/peerjs",
+      config: { iceServers: ICE_SERVERS },
+    }
+  : {
+      host: "0.peerjs.com",
+      port: 443,
+      secure: true,
+      path: "/",
+      config: { iceServers: ICE_SERVERS },
+    };
 
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
   useEffect(() => {
@@ -905,6 +905,12 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
       peer.on("error", (err: any) => {
         console.warn("Host PeerJS error:", err.type, err.message);
+      });
+
+      peer.on("call", (call: any) => {
+        if (localStreamRef.current) {
+          call.answer(localStreamRef.current);
+        }
       });
 
       peer.on("open", (peerJsId: string) => {

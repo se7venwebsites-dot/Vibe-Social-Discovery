@@ -28,13 +28,21 @@ const ICE_SERVERS = [
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
 
-const PEER_CONFIG = {
-  host: "0.peerjs.com",
-  port: 443,
-  secure: true,
-  path: "/",
-  config: { iceServers: ICE_SERVERS },
-};
+const PEER_CONFIG = process.env.EXPO_PUBLIC_DOMAIN
+  ? {
+      host: process.env.EXPO_PUBLIC_DOMAIN,
+      port: 443,
+      secure: true,
+      path: "/api/peerjs",
+      config: { iceServers: ICE_SERVERS },
+    }
+  : {
+      host: "0.peerjs.com",
+      port: 443,
+      secure: true,
+      path: "/",
+      config: { iceServers: ICE_SERVERS },
+    };
 
 const CITIES_OPTIONS = ["all", "Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
 

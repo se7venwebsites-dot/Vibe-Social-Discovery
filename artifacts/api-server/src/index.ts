@@ -80,6 +80,7 @@ function cleanupLivePeer(peer: Peer) {
         peerLiveRole.delete(vId);
       });
       liveRooms.delete(liveId);
+      db.update(livesTable).set({ isActive: false, hostPeerJsId: null }).where(eq(livesTable.id, liveId)).catch(() => {});
     } else {
       room.viewerPeerIds.delete(peer.peerId);
       const host = allPeers.get(room.hostPeerId);
@@ -333,4 +334,12 @@ wss.on("connection", (ws) => {
   sendTo(peer, { type: "connected", peerId });
 });
 
-server.listen(port, () => { console.log(`Server listening on port ${port}`); });
+server.listen(port, async () => {
+  console.log(`Server listening on port ${port}`);
+  try {
+    await db.update(livesTable).set({ isActive: false, hostPeerJsId: null });
+    console.log("Cleaned up stale lives on startup");
+  } catch (e) {
+    console.warn("Could not clean stale lives:", e);
+  }
+});
