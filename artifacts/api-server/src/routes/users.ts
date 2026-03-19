@@ -108,7 +108,14 @@ router.get("/users/:id/stats", async (req, res) => {
       eq(friendRequestsTable.status, "accepted")
     )
   );
-  res.json({ swipeCount: swipeCount?.val ?? 0, friendCount: friendCount?.val ?? 0 });
+  const [receivedLikes] = await db.select({ val: count() }).from(likesTable).where(
+    and(eq(likesTable.toUserId, id), eq(likesTable.action, "like"))
+  );
+  res.json({
+    swipeCount: swipeCount?.val ?? 0,
+    friendCount: friendCount?.val ?? 0,
+    receivedLikes: receivedLikes?.val ?? 0,
+  });
 });
 
 router.get("/users/:id", async (req, res) => {

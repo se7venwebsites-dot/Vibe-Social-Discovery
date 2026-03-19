@@ -149,10 +149,12 @@ export default function MessagesScreen() {
             renderItem={({ item: match, index }) => (
               <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
                 <Pressable style={[styles.card, (match.unreadCount ?? 0) > 0 && styles.cardUnread]} onPress={() => openChat(match.id)}>
-                  <View style={styles.avatarWrap}>
-                    <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
-                    <View style={styles.onlineDot} />
-                  </View>
+                  <Pressable onPress={() => router.push(`/user/${match.id}` as any)} hitSlop={4}>
+                    <View style={styles.avatarWrap}>
+                      <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
+                      <View style={styles.onlineDot} />
+                    </View>
+                  </Pressable>
                   <View style={styles.cardInfo}>
                     <Text style={styles.cardName}>{match.name}, {match.age}</Text>
                     {match.username && <Text style={styles.cardUsername}>@{match.username}</Text>}
@@ -190,11 +192,13 @@ export default function MessagesScreen() {
             {searchResult === "not_found" && <Text style={styles.notFound}>Nie znaleziono @{searchUsername.replace(/^@/, "")}</Text>}
             {searchResult && searchResult !== "not_found" && (
               <Animated.View entering={FadeInDown.springify()} style={styles.resultCard}>
-                <Image source={{ uri: (searchResult as Friend).photoUrl }} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
+                <Pressable onPress={() => router.push(`/user/${(searchResult as Friend).id}` as any)}>
+                  <Image source={{ uri: (searchResult as Friend).photoUrl }} style={styles.avatar} />
+                </Pressable>
+                <Pressable style={{ flex: 1 }} onPress={() => router.push(`/user/${(searchResult as Friend).id}` as any)}>
                   <Text style={styles.cardName}>{(searchResult as Friend).name}</Text>
                   <Text style={styles.cardUsername}>@{(searchResult as Friend).username}</Text>
-                </View>
+                </Pressable>
                 <Pressable style={styles.addBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); sendFriendRequest.mutate((searchResult as Friend).id); }} disabled={sendFriendRequest.isPending}>
                   {sendFriendRequest.isPending ? <ActivityIndicator size="small" color={Colors.black} /> : <><Feather name="user-plus" size={14} color={Colors.black} /><Text style={styles.addBtnText}>Dodaj</Text></>}
                 </Pressable>
@@ -214,13 +218,18 @@ export default function MessagesScreen() {
                   const matchItem = matches.find(m => m.id === friend.id);
                   return (
                     <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-                      <Pressable style={styles.card} onPress={() => { if (matchItem) openChat(matchItem.id); }}>
+                      <Pressable style={styles.card} onPress={() => { router.push(`/user/${friend.id}` as any); }}>
                         <Image source={{ uri: friend.photoUrl }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardName}>{friend.name}, {friend.age}</Text>
                           {friend.username && <Text style={styles.cardUsername}>@{friend.username}</Text>}
                         </View>
-                        {matchItem && <Feather name="message-circle" size={20} color={Colors.accent} />}
+                        {matchItem && (
+                          <Pressable onPress={() => openChat(matchItem.id)} hitSlop={8}>
+                            <Feather name="message-circle" size={20} color={Colors.accent} />
+                          </Pressable>
+                        )}
+                        <Feather name="chevron-right" size={16} color={Colors.textMuted} />
                       </Pressable>
                     </Animated.View>
                   );
