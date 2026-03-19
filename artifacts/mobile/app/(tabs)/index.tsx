@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   Modal,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -20,10 +21,12 @@ import Animated, {
   runOnJS,
   interpolate,
   FadeIn,
+  FadeInDown,
   ZoomIn,
 } from "react-native-reanimated";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
@@ -44,9 +47,27 @@ interface User {
   photos?: string[];
   isPremium: boolean;
   isVerified?: boolean;
+  isBoosted?: boolean;
   city?: string;
   interests?: string[];
 }
+
+interface BoostType {
+  id: string;
+  label: string;
+  price: string;
+  icon: string;
+  desc: string;
+  color: string;
+}
+
+const BOOSTS: BoostType[] = [
+  { id: "spotlight", label: "Spotlight", price: "4,99 zł", icon: "⚡", desc: "Przez 5 minut jesteś PIERWSZY w swipe — każdy Cię zobaczy!", color: "rgba(255,215,0,0.15)" },
+  { id: "attention", label: "Zwróć uwagę", price: "4,99 zł", icon: "📢", desc: "Wyślij dużą notyfikację wybranej osobie — niech wie, że chcesz ją poznać!", color: "rgba(255,69,58,0.15)" },
+  { id: "superlike", label: "Super Like", price: "2,99 zł", icon: "💜", desc: "Wyróżnij swój like — wyświetla się jako specjalny z animacją!", color: "rgba(138,43,226,0.15)" },
+  { id: "incognito", label: "Tryb Incognito", price: "3,99 zł", icon: "🕶️", desc: "Przez 15 min przeglądaj profile anonimowo — nikt nie wie, że go widziałeś!", color: "rgba(100,100,100,0.2)" },
+  { id: "megaboost", label: "Mega Boost", price: "9,99 zł", icon: "🚀", desc: "Przez 30 min jesteś na szczycie swipe + wyróżniony profil!", color: "rgba(204,255,0,0.12)" },
+];
 
 function SwipeCard({
   user,
@@ -141,6 +162,13 @@ function SwipeCard({
         <Text style={styles.stampNopeText}>NOPE</Text>
       </Animated.View>
 
+      {user.isBoosted && (
+        <View style={styles.boostBadgeCard}>
+          <Text style={styles.boostBadgeCardIcon}>⚡</Text>
+          <Text style={styles.boostBadgeCardText}>BOOST</Text>
+        </View>
+      )}
+
       <View style={styles.cardInfo}>
         {user.city ? (
           <View style={styles.locationRow}>
@@ -179,9 +207,14 @@ export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { currentUser, isPremium, activatePremium } = useUserContext();
   const [showPremium, setShowPremium] = useState(false);
+  const [showBoosts, setShowBoosts] = useState(false);
+  const [showAttention, setShowAttention] = useState<any>(null);
+  const [buyingBoost, setBuyingBoost] = useState<string | null>(null);
+  const [superLikeAnim, setSuperLikeAnim] = useState(false);
   const [cardStack, setCardStack] = useState<User[]>([]);
   const [matchUser, setMatchUser] = useState<User | null>(null);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
+  const queryClient = useQueryClient();
 
   const { data: usersData, isLoading, refetch } = useQuery<User[]>({
     queryKey: ["users", currentUser?.id],
@@ -195,6 +228,24 @@ export default function DiscoverScreen() {
     staleTime: 30000,
   });
 
+  const { data: attentionData } = useQuery({
+    queryKey: ["attention", currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser) return [];
+      const res = await fetch(`${BASE_URL}/boosts/attention/${currentUser.id}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser,
+    refetchInterval: 15000,
+  });
+
+  useEffect(() => {
+    if (attentionData && attentionData.length > 0 && !showAttention) {
+      setShowAttention(attentionData[0]);
+    }
+  }, [attentionData]);
+
   useEffect(() => {
     if (usersData && usersData.length > 0) {
       setCardStack(prev => {
@@ -205,6 +256,70 @@ export default function DiscoverScreen() {
       });
     }
   }, [usersData]);
+
+  const handleBuyBoost = async (boost: BoostType) => {
+    if (!currentUser) return;
+    setBuyingBoost(boost.id);
+
+    const confirmMsg = `Czy chcesz kupić ${boost.label} za ${boost.price}?`;
+    let confirmed = false;
+    if (Platform.OS === "web") {
+      confirmed = window.confirm(confirmMsg);
+    } else {
+      confirmed = await new Promise(resolve => {
+        const { Alert } = require("react-native");
+        Alert.alert("Kup ulepszenie", confirmMsg, [
+          { text: "Anuluj", style: "cancel", onPress: () => resolve(false) },
+          { text: `Kup za ${boost.price}`, onPress: () => resolve(true) },
+        ]);
+      });
+    }
+
+    if (!confirmed) { setBuyingBoost(null); return; }
+
+    let targetUserId = undefined;
+    if (boost.id === "attention" && cardStack.length > 0) {
+      targetUserId = cardStack[0].id;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/boosts/buy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, type: boost.id, targetUserId }),
+      });
+      if (res.ok) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (boost.id === "spotlight" || boost.id === "megaboost") {
+          refetch();
+        }
+        if (boost.id === "superlike" && cardStack.length > 0) {
+          setSuperLikeAnim(true);
+          setTimeout(() => {
+            setSuperLikeAnim(false);
+            handleSwipe("right");
+          }, 1200);
+        }
+        setShowBoosts(false);
+        const successMsg = boost.id === "attention"
+          ? `Powiadomienie wysłane do ${cardStack[0]?.name || "użytkownika"}!`
+          : `${boost.label} aktywowany!`;
+        if (Platform.OS === "web") {
+          window.alert(successMsg);
+        }
+      }
+    } catch {} finally {
+      setBuyingBoost(null);
+    }
+  };
+
+  const dismissAttention = async (notifId: number) => {
+    setShowAttention(null);
+    try {
+      await fetch(`${BASE_URL}/boosts/attention/${notifId}`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["attention"] });
+    } catch {}
+  };
 
   const handleSwipe = useCallback(async (dir: "left" | "right") => {
     const topUser = cardStack[0];
@@ -292,7 +407,93 @@ export default function DiscoverScreen() {
             );
           })
         )}
+
+        {superLikeAnim && (
+          <Animated.View entering={ZoomIn.springify()} style={styles.superLikeOverlay}>
+            <Text style={styles.superLikeEmoji}>💜</Text>
+            <Text style={styles.superLikeText}>SUPER LIKE!</Text>
+          </Animated.View>
+        )}
       </View>
+
+      <Pressable style={styles.boostFab} onPress={() => setShowBoosts(true)}>
+        <Text style={styles.boostFabIcon}>⚡</Text>
+        <Text style={styles.boostFabText}>Ulepszenia</Text>
+      </Pressable>
+
+      <Modal visible={showBoosts} transparent animationType="slide" onRequestClose={() => setShowBoosts(false)}>
+        <View style={styles.boostOverlay}>
+          <View style={styles.boostModal}>
+            <View style={styles.boostModalHeader}>
+              <Text style={styles.boostModalTitle}>Ulepszenia Swipe</Text>
+              <Pressable onPress={() => setShowBoosts(false)}>
+                <Feather name="x" size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.boostList} showsVerticalScrollIndicator={false}>
+              {BOOSTS.map((boost, i) => (
+                <Animated.View key={boost.id} entering={FadeInDown.delay(i * 80).springify()}>
+                  <Pressable
+                    style={[styles.boostItem, { backgroundColor: boost.color }]}
+                    onPress={() => handleBuyBoost(boost)}
+                    disabled={buyingBoost === boost.id}
+                  >
+                    <View style={styles.boostItemLeft}>
+                      <Text style={styles.boostItemIcon}>{boost.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.boostItemLabel}>{boost.label}</Text>
+                        <Text style={styles.boostItemDesc}>{boost.desc}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.boostItemPriceWrap}>
+                      {buyingBoost === boost.id
+                        ? <ActivityIndicator color={Colors.accent} size="small" />
+                        : <Text style={styles.boostItemPrice}>{boost.price}</Text>
+                      }
+                    </View>
+                  </Pressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!showAttention} transparent animationType="fade" onRequestClose={() => showAttention && dismissAttention(showAttention.id)}>
+        <View style={styles.attentionOverlay}>
+          <Animated.View entering={ZoomIn.springify()} style={styles.attentionModal}>
+            <Text style={styles.attentionBigEmoji}>📢</Text>
+            <Text style={styles.attentionTitle}>Ktoś chce Cię poznać!</Text>
+            {showAttention?.fromUser && (
+              <>
+                <Image source={{ uri: showAttention.fromUser.photoUrl }} style={styles.attentionAvatar} />
+                <Text style={styles.attentionName}>
+                  {showAttention.fromUser.name}, {showAttention.fromUser.age}
+                </Text>
+                {showAttention.fromUser.city && (
+                  <Text style={styles.attentionCity}>{showAttention.fromUser.city}</Text>
+                )}
+                <Text style={styles.attentionSub}>
+                  Ta osoba używa ulepszenia, żeby zwrócić Twoją uwagę!
+                </Text>
+                <Pressable
+                  style={styles.attentionAddBtn}
+                  onPress={() => {
+                    dismissAttention(showAttention.id);
+                    router.push(`/user/${showAttention.fromUser.id}`);
+                  }}
+                >
+                  <Feather name="user-plus" size={16} color={Colors.black} />
+                  <Text style={styles.attentionAddBtnText}>Zobacz profil</Text>
+                </Pressable>
+              </>
+            )}
+            <Pressable style={styles.attentionDismissBtn} onPress={() => dismissAttention(showAttention?.id)}>
+              <Text style={styles.attentionDismissBtnText}>Może później</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
 
       <PremiumModal
         visible={showPremium}
@@ -449,4 +650,42 @@ const styles = StyleSheet.create({
   matchMsgBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
   matchSkipBtn: { alignItems: "center", paddingVertical: 12 },
   matchSkipBtnText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted },
+
+  boostBadgeCard: { position: "absolute", top: 18, right: 14, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,215,0,0.9)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, zIndex: 20 },
+  boostBadgeCardIcon: { fontSize: 12 },
+  boostBadgeCardText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: "#000", letterSpacing: 1 },
+
+  boostFab: { position: "absolute", bottom: 18, left: 20, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,215,0,0.15)", borderWidth: 1, borderColor: "rgba(255,215,0,0.4)", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, zIndex: 50 },
+  boostFabIcon: { fontSize: 16 },
+  boostFabText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: "#FFD700" },
+
+  boostOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  boostModal: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "80%", borderWidth: 1, borderColor: Colors.border },
+  boostModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  boostModalTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
+  boostList: { padding: 16, gap: 12, paddingBottom: 40 },
+  boostItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)", padding: 16, gap: 12 },
+  boostItemLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  boostItemIcon: { fontSize: 28 },
+  boostItemLabel: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary },
+  boostItemDesc: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
+  boostItemPriceWrap: { minWidth: 60, alignItems: "flex-end" },
+  boostItemPrice: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.accent },
+
+  superLikeOverlay: { position: "absolute", alignItems: "center", justifyContent: "center", zIndex: 100 },
+  superLikeEmoji: { fontSize: 80 },
+  superLikeText: { fontFamily: "Montserrat_700Bold", fontSize: 28, color: "#8B5CF6", letterSpacing: 2, marginTop: 8 },
+
+  attentionOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", padding: 24 },
+  attentionModal: { width: "100%", maxWidth: 380, backgroundColor: Colors.cardBg, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: "rgba(255,69,58,0.4)", gap: 12 },
+  attentionBigEmoji: { fontSize: 56 },
+  attentionTitle: { fontFamily: "Montserrat_700Bold", fontSize: 22, color: "#FF453A", textAlign: "center" },
+  attentionAvatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: "#FF453A", marginTop: 4 },
+  attentionName: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
+  attentionCity: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textSecondary },
+  attentionSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  attentionAddBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: "#FF453A", borderRadius: 16, paddingVertical: 14, width: "100%", marginTop: 4 },
+  attentionAddBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
+  attentionDismissBtn: { alignItems: "center", paddingVertical: 10 },
+  attentionDismissBtnText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted },
 });

@@ -9,6 +9,7 @@ import friendsRouter from "./friends";
 import livesRouter from "./lives";
 import authRouter from "./auth";
 import iceServersRouter from "./ice-servers";
+import boostsRouter from "./boosts";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(messagesRouter);
 router.use(friendsRouter);
 router.use(livesRouter);
 router.use(iceServersRouter);
+router.use(boostsRouter);
 
 export default router;

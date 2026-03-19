@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, likesTable, friendRequestsTable } from "@workspace/db";
-import { eq, and, notInArray, isNotNull, or, count } from "drizzle-orm";
+import { db, usersTable, likesTable, friendRequestsTable, boostsTable } from "@workspace/db";
+import { eq, and, notInArray, isNotNull, or, count, gt, inArray } from "drizzle-orm";
 import { CITY_COORDS } from "./auth";
 
 const router: IRouter = Router();
@@ -30,11 +30,26 @@ router.get("/users", async (req, res) => {
   const swipedIds = alreadySwiped.map(r => r.toUserId);
   const exclude = [currentUserId, ...swipedIds];
 
+  const now = new Date();
+  const spotlightBoosts = await db.select({ userId: boostsTable.userId }).from(boostsTable).where(
+    and(
+      or(eq(boostsTable.type, "spotlight"), eq(boostsTable.type, "megaboost")),
+      gt(boostsTable.expiresAt, now)
+    )
+  );
+  const boostedIds = new Set(spotlightBoosts.map(b => b.userId));
+
   const users = await db.select().from(usersTable).where(
     exclude.length > 0 ? notInArray(usersTable.id, exclude) : undefined
   ).limit(20);
 
-  res.json(users.map(toUserDto));
+  const sorted = [...users].sort((a, b) => {
+    const aB = boostedIds.has(a.id) ? 1 : 0;
+    const bB = boostedIds.has(b.id) ? 1 : 0;
+    return bB - aB;
+  });
+
+  res.json(sorted.map(u => ({ ...toUserDto(u), isBoosted: boostedIds.has(u.id) })));
 });
 
 // IMPORTANT: Specific routes must come BEFORE the generic /:id route

@@ -34,7 +34,8 @@ artifacts-monorepo/
 
 ## VIBE App Features
 - **Auth**: 3-step onboarding (name/age/city → bio → interests), persisted via AsyncStorage
-- **Swipe**: Unlimited swipes with PanResponder + Reanimated animations
+- **Swipe**: Unlimited swipes with PanResponder + Reanimated animations + paid boosts
+- **Boosts**: Spotlight (5min first in swipe, 4.99zł), Attention (notification to chosen user, 4.99zł), Super Like (special like with animation, 2.99zł), Incognito (15min anonymous browsing, 3.99zł), Mega Boost (30min top + highlighted, 9.99zł)
 - **Likes tab**: Blurred for free users, paywall to unlock
 - **Messages tab**: Matches list with blur paywall for free users  
 - **Chat screen**: Full real-time chat (polling every 4s) with premium paywall
