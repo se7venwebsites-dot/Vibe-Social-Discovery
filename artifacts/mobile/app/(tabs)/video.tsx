@@ -14,28 +14,44 @@ import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
-import { useUserContext } from "@/context/UserContext";
+import { useUserContext, BASE_URL } from "@/context/UserContext";
 
 const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
   : `ws://localhost:8080/api/ws`;
 
-const PEER_CONFIG = {
-  host: "0.peerjs.com",
-  port: 443,
-  secure: true,
-  path: "/",
-  config: {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun2.l.google.com:19302" },
-      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-    ],
-  },
-};
+const FALLBACK_ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+];
+
+let _cachedIce: object[] | null = null;
+let _cacheTs = 0;
+async function getIceServers(): Promise<object[]> {
+  const now = Date.now();
+  if (_cachedIce && now - _cacheTs < 3_600_000) return _cachedIce;
+  try {
+    const res = await fetch(`${BASE_URL}/ice-servers`, { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      _cachedIce = await res.json() as object[];
+      _cacheTs = now;
+      return _cachedIce;
+    }
+  } catch {}
+  return FALLBACK_ICE_SERVERS;
+}
+
+function buildPeerConfig(iceServers: object[]) {
+  return {
+    host: "0.peerjs.com",
+    port: 443,
+    secure: true,
+    path: "/",
+    config: { iceServers },
+  };
+}
 
 const CITIES_OPTIONS = ["all", "Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
 
@@ -215,8 +231,9 @@ export default function VideoScreen() {
       setMicOn(true);
       setCameraOn(true);
 
+      const iceServers = await getIceServers();
       const { Peer } = (await import("peerjs")) as any;
-      const peer = new Peer(PEER_CONFIG);
+      const peer = new Peer(buildPeerConfig(iceServers));
       peerRef.current = peer;
 
       peer.on("error", (err: any) => {
@@ -293,8 +310,9 @@ export default function VideoScreen() {
     if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
 
     const createNewPeer = async () => {
+      const iceServers = await getIceServers();
       const { Peer } = (await import("peerjs")) as any;
-      const peer = new Peer(PEER_CONFIG);
+      const peer = new Peer(buildPeerConfig(iceServers));
       peerRef.current = peer;
       peer.on("error", (err: any) => {
         if (err.type === "peer-unavailable") handlePartnerDisconnect();

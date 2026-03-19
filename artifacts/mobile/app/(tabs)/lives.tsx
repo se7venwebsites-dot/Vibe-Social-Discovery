@@ -104,21 +104,38 @@ interface FloatingHeart {
   xOff: number;
 }
 
-const ICE_SERVERS = [
+const FALLBACK_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
 
-const PEER_CONFIG = {
-  host: "0.peerjs.com",
-  port: 443,
-  secure: true,
-  path: "/",
-  config: { iceServers: ICE_SERVERS },
-};
+let _cachedIce: object[] | null = null;
+let _cacheTs = 0;
+async function getIceServers(): Promise<object[]> {
+  const now = Date.now();
+  if (_cachedIce && now - _cacheTs < 3_600_000) return _cachedIce;
+  try {
+    const res = await fetch(`${BASE_URL}/ice-servers`, { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      _cachedIce = await res.json() as object[];
+      _cacheTs = now;
+      return _cachedIce;
+    }
+  } catch {}
+  return FALLBACK_ICE_SERVERS;
+}
+
+function buildPeerConfig(iceServers: object[]) {
+  return {
+    host: "0.peerjs.com",
+    port: 443,
+    secure: true,
+    path: "/",
+    config: { iceServers },
+  };
+}
 
 function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", videoRef: externalRef }: {
   stream: MediaStream | null;
@@ -354,10 +371,11 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     setStageInvite(null);
     if (!invite || Platform.OS !== "web") return;
     try {
+      const iceServers = await getIceServers();
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       myStageStreamRef.current = stream;
       setMyStageStream(stream);
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers } as RTCConfiguration);
       cohostPcRef.current = pc;
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
       pc.onicecandidate = (e) => {
@@ -377,8 +395,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
   const callHostViaPeerJs = useCallback(async (hostPeerJsId: string) => {
     if (Platform.OS !== "web") return;
+    const iceServers = await getIceServers();
     const { Peer } = (await import("peerjs")) as any;
-    const peer = new Peer(PEER_CONFIG);
+    const peer = new Peer(buildPeerConfig(iceServers));
     viewerPeerRef.current = peer;
 
     peer.on("error", (err: any) => {
@@ -468,7 +487,8 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "cohost-offer") {
-        const coPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        const iceServersForCo = await getIceServers();
+        const coPc = new RTCPeerConnection({ iceServers: iceServersForCo } as RTCConfiguration);
         coPc.ontrack = (e) => {
           const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
           setCohostVisible(true);
@@ -809,9 +829,10 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   }, []);
 
   const distributeCohost = useCallback(async (stream: MediaStream, ws: WebSocket) => {
+    const iceServers = await getIceServers();
     for (const [viewerPeerId] of viewerPcsRef.current) {
       try {
-        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        const pc = new RTCPeerConnection({ iceServers } as RTCConfiguration);
         cohostViewerPcsRef.current.set(viewerPeerId, pc);
         stream.getTracks().forEach(t => pc.addTrack(t, stream));
         pc.onicecandidate = (e) => {
@@ -901,8 +922,9 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
       setMicOn(true);
       setCameraOn(true);
 
+      const iceServers = await getIceServers();
       const { Peer } = (await import("peerjs")) as any;
-      const peer = new Peer(PEER_CONFIG);
+      const peer = new Peer(buildPeerConfig(iceServers));
       peerRef.current = peer;
 
       peer.on("error", (err: any) => {
@@ -958,7 +980,8 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
           if (msg.type === "stage-offer") {
             const cohostPeerId = msg.fromPeerId as string;
-            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+            const iceServersForStage = await getIceServers();
+            const pc = new RTCPeerConnection({ iceServers: iceServersForStage } as RTCConfiguration);
             cohostPcRef.current = pc;
             pc.ontrack = (e) => {
               const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();

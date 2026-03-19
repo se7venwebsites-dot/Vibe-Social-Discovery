@@ -8,6 +8,7 @@ import messagesRouter from "./messages";
 import friendsRouter from "./friends";
 import livesRouter from "./lives";
 import authRouter from "./auth";
+import iceServersRouter from "./ice-servers";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(matchesRouter);
 router.use(messagesRouter);
 router.use(friendsRouter);
 router.use(livesRouter);
+router.use(iceServersRouter);
 
 export default router;
