@@ -437,15 +437,21 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     });
 
     peer.on("open", () => {
-      let audioCtx: AudioContext | null = null;
-      let silentStream: MediaStream;
+      const silentStream = new MediaStream();
       try {
-        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const dest = audioCtx.createMediaStreamDestination();
-        silentStream = dest.stream;
-      } catch {
-        silentStream = new MediaStream();
-      }
+        dest.stream.getAudioTracks().forEach(t => silentStream.addTrack(t));
+      } catch {}
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 2;
+        canvas.height = 2;
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.fillRect(0, 0, 2, 2);
+        const canvasStream = (canvas as any).captureStream(1) as MediaStream;
+        canvasStream.getVideoTracks().forEach(t => silentStream.addTrack(t));
+      } catch {}
       const call = peer.call(hostPeerJsId, silentStream);
       if (!call) return;
       viewerCallRef.current = call;
