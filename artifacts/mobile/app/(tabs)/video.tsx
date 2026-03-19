@@ -98,31 +98,19 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
   filter?: string;
   elId: string;
 }) {
-  const [dbg, setDbg] = useState("init");
-
   useEffect(() => {
     const container = document.getElementById(elId);
-    if (!container) {
-      setDbg(`NO container #${elId}`);
-      return;
-    }
+    if (!container) return;
 
     container.innerHTML = "";
-    if (!stream) {
-      setDbg("stream=null");
-      return;
-    }
-
-    const vTracks = stream.getVideoTracks();
-    const aTracks = stream.getAudioTracks();
-    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active}`);
+    if (!stream) return;
 
     const video = document.createElement("video");
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:#000;";
+    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:transparent;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
     container.style.position = "relative";
@@ -133,15 +121,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
     const playWithRetry = () => {
       video.play().then(() => {
         if (!muted) video.muted = false;
-        setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
       }).catch(() => {
         setTimeout(playWithRetry, 100);
       });
-    };
-    
-    video.onplay = () => {
-      if (!muted) video.muted = false;
-      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
     };
     
     playWithRetry();
@@ -155,9 +137,6 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
   return (
     <View style={{ flex: 1, width: "100%", height: "100%" }}>
       <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
-      <Text style={{ position: "absolute", top: 4, left: 4, right: 4, color: "#0f0", fontSize: 10, backgroundColor: "rgba(0,0,0,0.7)", padding: 3, zIndex: 9999 }}>
-        [{elId}]: {dbg}
-      </Text>
     </View>
   );
 }

@@ -145,32 +145,22 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
   videoRef?: React.MutableRefObject<any>;
   elId: string;
 }) {
-  const [dbg, setDbg] = useState("init");
-
   useEffect(() => {
     const container = document.getElementById(elId);
-    if (!container) {
-      setDbg(`NO container for #${elId}`);
-      return;
-    }
+    if (!container) return;
 
     container.innerHTML = "";
     if (!stream) {
-      setDbg("stream=null");
       if (externalRef) externalRef.current = null;
       return;
     }
-
-    const vTracks = stream.getVideoTracks();
-    const aTracks = stream.getAudioTracks();
-    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active} box:${container.offsetWidth}x${container.offsetHeight}`);
 
     const video = document.createElement("video");
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:#000;";
+    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:transparent;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
     container.style.position = "relative";
@@ -180,26 +170,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
 
     video.srcObject = stream;
     
-    video.onloadedmetadata = () => {
-      setDbg(prev => prev + ` META=${video.videoWidth}x${video.videoHeight}`);
-    };
-    video.onresize = () => {
-      setDbg(prev => prev + ` RESIZE=${video.videoWidth}x${video.videoHeight}`);
-    };
-    
-    const checkDimensions = () => {
-      if (video.videoWidth > 0) {
-        setDbg(prev => prev + ` FRAMES=${video.videoWidth}x${video.videoHeight}`);
-      } else {
-        setTimeout(checkDimensions, 500);
-      }
-    };
-    
     const playWithRetry = () => {
       video.play().then(() => {
         if (!muted) video.muted = false;
-        setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
-        checkDimensions();
       }).catch(() => {
         setTimeout(playWithRetry, 100);
       });
@@ -215,11 +188,8 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
   }, [stream, muted, mirrored, filter, elId]);
 
   return (
-    <View style={{ flex: 1, width: "100%", height: "100%", overflow: "visible" as any }}>
-      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%", overflow: "visible" as any }} />
-      <Text style={{ position: "absolute", top: 40, left: 10, right: 10, color: "#0f0", fontSize: 11, backgroundColor: "rgba(0,0,0,0.7)", padding: 4, zIndex: 9999 }}>
-        DBG[{elId}]: {dbg}
-      </Text>
+    <View style={{ flex: 1, width: "100%", height: "100%" }}>
+      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
     </View>
   );
 }
@@ -681,7 +651,13 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         {live && (
           <View style={styles.topBar}>
             <View style={styles.topBarLeft}>
-              <Image source={{ uri: live.host.photoUrl }} style={styles.hostAvatarTop} />
+              {live.host.photoUrl ? (
+                <Image source={{ uri: live.host.photoUrl }} style={styles.hostAvatarTop} />
+              ) : (
+                <View style={[styles.hostAvatarTop, { backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center" }]}>
+                  <Feather name="user" size={18} color="#fff" />
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.hostNameTop} numberOfLines={1}>
                   {live.host.name}{live.host.isVerified ? " ✓" : ""}
@@ -1517,8 +1493,8 @@ const styles = StyleSheet.create({
   verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
 
   liveContainer: { flex: 1, backgroundColor: "#000" },
-  topGradient: { position: "absolute", top: 0, left: 0, right: 0, height: 110, backgroundColor: "rgba(0,0,0,0.55)", zIndex: 1 },
-  bottomGradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1 },
+  topGradient: { position: "absolute", top: 0, left: 0, right: 0, height: 110, backgroundColor: "rgba(0,0,0,0.35)", zIndex: 1 },
+  bottomGradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180, backgroundColor: "rgba(0,0,0,0.35)", zIndex: 1 },
 
   connectingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.82)", alignItems: "center", justifyContent: "center", zIndex: 10 },
   connectingAvatar: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: Colors.danger },
