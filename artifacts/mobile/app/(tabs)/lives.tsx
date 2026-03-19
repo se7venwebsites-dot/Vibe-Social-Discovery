@@ -40,7 +40,11 @@ const { height: SCREEN_H } = Dimensions.get("window");
 
 const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
-  : `ws://localhost:8080/ws`;
+  : `ws://localhost:8080/api/ws`;
+
+const PEER_CONFIG = process.env.EXPO_PUBLIC_DOMAIN
+  ? { host: process.env.EXPO_PUBLIC_DOMAIN, port: 443, path: "/api/peerjs", secure: true }
+  : { host: "localhost", port: 8080, path: "/api/peerjs", secure: false };
 
 const GIFTS = [
   { id: "heart", emoji: "❤️", label: "Serce", cost: 60 },
@@ -337,7 +341,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const callHostViaPeerJs = useCallback(async (hostPeerJsId: string) => {
     if (Platform.OS !== "web") return;
     const { Peer } = (await import("peerjs")) as any;
-    const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+    const peer = new Peer(PEER_CONFIG);
     viewerPeerRef.current = peer;
 
     peer.on("error", (err: any) => {
@@ -882,7 +886,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
       }
 
       const { Peer } = (await import("peerjs")) as any;
-      const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+      const peer = new Peer(PEER_CONFIG);
       peerRef.current = peer;
 
       peer.on("error", (err: any) => {

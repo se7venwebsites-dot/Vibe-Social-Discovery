@@ -15,6 +15,7 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "peer": "^1.0.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {

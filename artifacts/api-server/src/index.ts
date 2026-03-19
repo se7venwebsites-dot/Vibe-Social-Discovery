@@ -1,5 +1,6 @@
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import { ExpressPeerServer } from "peer";
 import app from "./app";
 import { db, livesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -11,6 +12,9 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${raw
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: "/api/ws" });
+
+const peerServer = ExpressPeerServer(server, { path: "/", allow_discovery: true });
+app.use("/api/peerjs", peerServer);
 
 interface Peer {
   ws: WebSocket;
