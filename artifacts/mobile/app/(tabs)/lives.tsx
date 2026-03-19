@@ -425,7 +425,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     }
   }, [stageInvite]);
 
-  const callHostViaPeerJs = useCallback(async (hostPeerJsId: string) => {
+  const setupViewerPeer = useCallback(async () => {
     if (Platform.OS !== "web") return;
     const iceServers = await getIceServers();
     const { Peer } = (await import("peerjs")) as any;
@@ -434,30 +434,30 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
     peer.on("error", (err: any) => {
       console.warn("Viewer PeerJS error:", err.type, err.message);
-      if (err.type === "peer-unavailable") {
-        Alert.alert("Błąd", "Host nie jest dostępny. Być może live się zakończył.");
-        cleanup();
-        onClose();
-      } else if (err.type !== "server-error") {
+      if (err.type !== "server-error") {
         Alert.alert("Błąd połączenia", "Nie można połączyć się z hostem live.");
         cleanup();
         onClose();
       }
     });
 
-    peer.on("open", async () => {
-      let offeringStream = new MediaStream();
+    peer.on("open", (viewerPeerJsId: string) => {
+      console.warn("VIEWER PEER READY:", viewerPeerJsId);
+      wsRef.current?.send(JSON.stringify({ type: "viewer-peer-ready", viewerPeerJsId }));
+    });
+
+    peer.on("call", (call: any) => {
+      console.warn("VIEWER: HOST IS CALLING ME");
+      let answerStream = new MediaStream();
       try {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const dest = audioCtx.createMediaStreamDestination();
-        dest.stream.getAudioTracks().forEach(t => offeringStream.addTrack(t));
+        dest.stream.getAudioTracks().forEach(t => answerStream.addTrack(t));
       } catch {}
-      
-      console.warn("VIEWER OFFER:", offeringStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" "));
-      const call = peer.call(hostPeerJsId, offeringStream);
-      if (!call) return;
+      call.answer(answerStream);
       viewerCallRef.current = call;
       call.on("stream", (rs: MediaStream) => {
+        console.warn("VIEWER GOT STREAM:", rs.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" "));
         setConnected(true);
         setRemoteStream(rs);
       });
@@ -496,9 +496,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "live-joined") {
-        if (msg.hostPeerJsId) {
-          callHostViaPeerJs(msg.hostPeerJsId as string);
-        }
+        setupViewerPeer();
       }
 
       if (msg.type === "stage-invite") {
@@ -998,6 +996,17 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             setViewers(prev => [...prev, { peerId: viewerPeerId, name: viewerName }]);
           }
 
+          if (msg.type === "viewer-peer-ready") {
+            const viewerPeerJsId = msg.viewerPeerJsId as string;
+            console.warn("HOST: calling viewer", viewerPeerJsId, "with stream v:", stream.getVideoTracks().length, "a:", stream.getAudioTracks().length);
+            const call = peer.call(viewerPeerJsId, stream);
+            if (call) {
+              setViewerCount(c => c + 1);
+              call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
+              call.on("error", () => setViewerCount(c => Math.max(0, c - 1)));
+            }
+          }
+
           if (msg.type === "viewer-left") {
             const leftPeerId = msg.viewerPeerId as string;
             setViewers(prev => prev.filter(v => v.peerId !== leftPeerId));
@@ -1050,22 +1059,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         ws.onclose = () => {};
       });
 
-      peer.on("call", (call: any) => {
-        if (!stream) { console.warn("HOST: stream is null!"); call.close(); return; }
-        const vTracks = stream.getVideoTracks();
-        const aTracks = stream.getAudioTracks();
-        console.warn(`HOST ANSWER: v=${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a=${aTracks.length}`);
-        
-        const answerStream = new MediaStream();
-        vTracks.forEach(t => answerStream.addTrack(t));
-        aTracks.forEach(t => answerStream.addTrack(t));
-        console.warn(`HOST ANSWER RECONSTRUCTED: ${answerStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(" ")}`);
-        
-        call.answer(answerStream);
-        setViewerCount(c => c + 1);
-        call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
-        call.on("error", () => setViewerCount(c => Math.max(0, c - 1)));
-      });
+      
     };
 
     startBroadcast();

@@ -214,6 +214,16 @@ wss.on("connection", (ws) => {
         break;
       }
 
+      case "viewer-peer-ready": {
+        const liveInfo = peerLiveRole.get(peerId);
+        if (!liveInfo || liveInfo.role !== "viewer") break;
+        const room = liveRooms.get(liveInfo.liveId);
+        if (!room) break;
+        const hostPeer = allPeers.get(room.hostPeerId);
+        if (hostPeer) sendTo(hostPeer, { type: "viewer-peer-ready", viewerPeerJsId: msg.viewerPeerJsId, viewerWsPeerId: peerId });
+        break;
+      }
+
       case "live-offer": {
         const target = allPeers.get(msg.targetPeerId as string);
         if (target) sendTo(target, { type: "live-offer", offer: msg.offer, fromPeerId: peerId });
