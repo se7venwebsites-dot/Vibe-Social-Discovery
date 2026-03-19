@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Platform,
   Modal,
   ScrollView,
+  TextInput,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -213,6 +215,9 @@ export default function DiscoverScreen() {
   const [superLikeAnim, setSuperLikeAnim] = useState(false);
   const [cardStack, setCardStack] = useState<User[]>([]);
   const [matchUser, setMatchUser] = useState<User | null>(null);
+  const [swipeMsgUser, setSwipeMsgUser] = useState<User | null>(null);
+  const [swipeMsgText, setSwipeMsgText] = useState("");
+  const [sendingSwipeMsg, setSendingSwipeMsg] = useState(false);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const queryClient = useQueryClient();
 
@@ -321,6 +326,39 @@ export default function DiscoverScreen() {
     } catch {}
   };
 
+  const doSwipeRight = useCallback(async (user: User, message?: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`${BASE_URL}/likes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromUserId: currentUser.id, toUserId: user.id, action: "like" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isMatch) {
+          setMatchUser(user);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    } catch {}
+
+    if (message && message.trim().length > 0) {
+      try {
+        await fetch(`${BASE_URL}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId: currentUser.id,
+            receiverId: user.id,
+            content: message.trim(),
+            isSwipeMessage: true,
+          }),
+        });
+      } catch {}
+    }
+  }, [currentUser]);
+
   const handleSwipe = useCallback(async (dir: "left" | "right") => {
     const topUser = cardStack[0];
     if (!topUser || !currentUser) return;
@@ -328,20 +366,8 @@ export default function DiscoverScreen() {
     Haptics.impactAsync(dir === "right" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
 
     if (dir === "right") {
-      try {
-        const res = await fetch(`${BASE_URL}/likes`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fromUserId: currentUser.id, toUserId: topUser.id, action: "like" }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.isMatch) {
-            setMatchUser(topUser);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          }
-        }
-      } catch {}
+      setSwipeMsgUser(topUser);
+      setSwipeMsgText("");
     }
 
     setCardStack(prev => {
@@ -350,6 +376,22 @@ export default function DiscoverScreen() {
       return next;
     });
   }, [cardStack, currentUser, refetch]);
+
+  const handleSendSwipeMsg = useCallback(async () => {
+    if (!swipeMsgUser) return;
+    setSendingSwipeMsg(true);
+    await doSwipeRight(swipeMsgUser, swipeMsgText);
+    setSendingSwipeMsg(false);
+    setSwipeMsgUser(null);
+    setSwipeMsgText("");
+  }, [swipeMsgUser, swipeMsgText, doSwipeRight]);
+
+  const handleSkipSwipeMsg = useCallback(async () => {
+    if (!swipeMsgUser) return;
+    await doSwipeRight(swipeMsgUser);
+    setSwipeMsgUser(null);
+    setSwipeMsgText("");
+  }, [swipeMsgUser, doSwipeRight]);
 
   if (isLoading && cardStack.length === 0) {
     return (
@@ -416,7 +458,7 @@ export default function DiscoverScreen() {
         )}
       </View>
 
-      <Pressable style={styles.boostFab} onPress={() => setShowBoosts(true)}>
+      <Pressable style={[styles.boostFab, { bottom: insets.bottom + 70 }]} onPress={() => setShowBoosts(true)}>
         <Text style={styles.boostFabIcon}>⚡</Text>
         <Text style={styles.boostFabText}>Ulepszenia</Text>
       </Pressable>
@@ -493,6 +535,47 @@ export default function DiscoverScreen() {
             </Pressable>
           </Animated.View>
         </View>
+      </Modal>
+
+      <Modal visible={!!swipeMsgUser} transparent animationType="slide" onRequestClose={handleSkipSwipeMsg}>
+        <KeyboardAvoidingView style={styles.swipeMsgOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <Animated.View entering={FadeInDown.springify()} style={styles.swipeMsgModal}>
+            <View style={styles.swipeMsgHeader}>
+              <Image source={{ uri: swipeMsgUser?.photoUrl }} style={styles.swipeMsgAvatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.swipeMsgTitle}>Polubiono {swipeMsgUser?.name}! 💚</Text>
+                <Text style={styles.swipeMsgSub}>Wyślij wiadomość, żeby się wyróżnić</Text>
+              </View>
+            </View>
+            <TextInput
+              style={styles.swipeMsgInput}
+              placeholder={`Napisz coś do ${swipeMsgUser?.name}...`}
+              placeholderTextColor={Colors.textMuted}
+              value={swipeMsgText}
+              onChangeText={setSwipeMsgText}
+              maxLength={200}
+              multiline
+              autoFocus
+            />
+            <View style={styles.swipeMsgActions}>
+              <Pressable style={styles.swipeMsgSendBtn} onPress={handleSendSwipeMsg} disabled={sendingSwipeMsg}>
+                {sendingSwipeMsg ? (
+                  <ActivityIndicator color={Colors.black} size="small" />
+                ) : (
+                  <>
+                    <Feather name="send" size={16} color={Colors.black} />
+                    <Text style={styles.swipeMsgSendText}>
+                      {swipeMsgText.trim() ? "Wyślij z wiadomością" : "Polub bez wiadomości"}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable style={styles.swipeMsgSkipBtn} onPress={handleSkipSwipeMsg}>
+                <Text style={styles.swipeMsgSkipText}>Pomiń</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <PremiumModal
@@ -688,4 +771,17 @@ const styles = StyleSheet.create({
   attentionAddBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
   attentionDismissBtn: { alignItems: "center", paddingVertical: 10 },
   attentionDismissBtnText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted },
+
+  swipeMsgOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  swipeMsgModal: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 36, borderWidth: 1, borderColor: Colors.border },
+  swipeMsgHeader: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
+  swipeMsgAvatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: Colors.accent },
+  swipeMsgTitle: { fontFamily: "Montserrat_700Bold", fontSize: 18, color: Colors.textPrimary },
+  swipeMsgSub: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary },
+  swipeMsgInput: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, fontFamily: "Montserrat_400Regular", fontSize: 15, color: Colors.textPrimary, minHeight: 56, maxHeight: 120, textAlignVertical: "top" },
+  swipeMsgActions: { gap: 10, marginTop: 14 },
+  swipeMsgSendBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: Colors.accent, borderRadius: 16, paddingVertical: 15 },
+  swipeMsgSendText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.black },
+  swipeMsgSkipBtn: { alignItems: "center", paddingVertical: 10 },
+  swipeMsgSkipText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted },
 });

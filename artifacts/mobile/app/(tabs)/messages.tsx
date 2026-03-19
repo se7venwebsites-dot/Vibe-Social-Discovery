@@ -34,6 +34,17 @@ interface Match {
   matchId: number;
   lastMessage?: string | null;
   unreadCount?: number;
+  swipeMessage?: string | null;
+}
+
+interface SwipeMsg {
+  id: number;
+  senderId: number;
+  content: string;
+  isRead: boolean;
+  createdAt: string;
+  isMatched: boolean;
+  sender: { id: number; name: string; age: number; photoUrl: string; city?: string } | null;
 }
 
 interface FriendRequest {
@@ -60,6 +71,13 @@ export default function MessagesScreen() {
     queryKey: ["matches", currentUser?.id],
     queryFn: async () => { const res = await fetch(`${BASE_URL}/matches/${currentUser!.id}`); return res.json(); },
     enabled: !!currentUser,
+  });
+
+  const { data: swipeMessages = [] } = useQuery<SwipeMsg[]>({
+    queryKey: ["swipe-messages", currentUser?.id],
+    queryFn: async () => { const res = await fetch(`${BASE_URL}/messages/swipe/${currentUser!.id}`); return res.json(); },
+    enabled: !!currentUser,
+    refetchInterval: 20000,
   });
 
   const { data: friendRequests = [], isLoading: reqLoading } = useQuery<FriendRequest[]>({
@@ -138,40 +156,100 @@ export default function MessagesScreen() {
 
       {tab === "matches" && (
         matchesLoading ? <View style={styles.center}><ActivityIndicator color={Colors.accent} /></View> :
-        matches.length === 0 ? (
+        matches.length === 0 && swipeMessages.length === 0 ? (
           <View style={styles.center}>
             <Feather name="heart" size={40} color={Colors.textMuted} />
             <Text style={styles.emptyTitle}>Brak dopasowań</Text>
             <Text style={styles.emptyText}>Przesuń w prawo, żeby znaleźć swój match!</Text>
           </View>
         ) : (
-          <FlatList data={matches} keyExtractor={m => String(m.matchId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, gap: 10 }}
-            renderItem={({ item: match, index }) => (
-              <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-                <Pressable style={[styles.card, (match.unreadCount ?? 0) > 0 && styles.cardUnread]} onPress={() => openChat(match.id)}>
-                  <Pressable onPress={() => router.push(`/user/${match.id}` as any)} hitSlop={4}>
-                    <View style={styles.avatarWrap}>
-                      <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
-                      <View style={styles.onlineDot} />
+          <FlatList
+            data={[
+              ...swipeMessages
+                .filter(sm => !matches.some(m => m.id === sm.senderId))
+                .map(sm => ({ _type: "swipe" as const, ...sm })),
+              ...matches.map(m => ({ _type: "match" as const, ...m })),
+            ]}
+            keyExtractor={item => item._type === "swipe" ? `sw-${item.id}` : `m-${(item as any).matchId}`}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, gap: 10 }}
+            renderItem={({ item, index }) => {
+              if (item._type === "swipe") {
+                const sm = item as SwipeMsg & { _type: "swipe" };
+                const canView = isPremium || sm.isMatched;
+                return (
+                  <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
+                    <Pressable
+                      style={[styles.card, styles.swipeMsgCard]}
+                      onPress={() => {
+                        if (canView && sm.sender) {
+                          router.push(`/user/${sm.sender.id}` as any);
+                        } else {
+                          setShowPremium(true);
+                        }
+                      }}
+                    >
+                      <View style={styles.avatarWrap}>
+                        <Image
+                          source={{ uri: sm.sender?.photoUrl }}
+                          style={[styles.avatar, !canView && styles.avatarBlurred]}
+                        />
+                        <View style={styles.swipeMsgBadge}>
+                          <Feather name="message-circle" size={10} color="#fff" />
+                        </View>
+                      </View>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardName}>
+                          {canView ? `${sm.sender?.name}, ${sm.sender?.age}` : "Nowa wiadomość ze swipe"}
+                        </Text>
+                        {canView ? (
+                          <Text style={styles.swipeMsgPreview} numberOfLines={2}>
+                            &quot;{sm.content}&quot;
+                          </Text>
+                        ) : (
+                          <View style={styles.lockRow}>
+                            <Feather name="lock" size={11} color={Colors.textMuted} />
+                            <Text style={styles.lockText}>Odblokuj z match lub Premium</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.swipeMsgTag}>
+                        <Text style={styles.swipeMsgTagText}>SWIPE</Text>
+                      </View>
+                    </Pressable>
+                  </Animated.View>
+                );
+              }
+
+              const match = item as Match & { _type: "match" };
+              return (
+                <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
+                  <Pressable style={[styles.card, (match.unreadCount ?? 0) > 0 && styles.cardUnread]} onPress={() => openChat(match.id)}>
+                    <Pressable onPress={() => router.push(`/user/${match.id}` as any)} hitSlop={4}>
+                      <View style={styles.avatarWrap}>
+                        <Image source={{ uri: match.photoUrl }} style={styles.avatar} />
+                        <View style={styles.onlineDot} />
+                      </View>
+                    </Pressable>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardName}>{match.name}, {match.age}</Text>
+                      {match.username && <Text style={styles.cardUsername}>@{match.username}</Text>}
+                      {!isPremium ? (
+                        <View style={styles.lockRow}><Feather name="lock" size={11} color={Colors.textMuted} /><Text style={styles.lockText}>Odblokuj za 24,99 zł/mies.</Text></View>
+                      ) : match.swipeMessage && !match.lastMessage ? (
+                        <Text style={styles.swipeMsgPreview} numberOfLines={1}>&quot;{match.swipeMessage}&quot;</Text>
+                      ) : (
+                        <Text style={[styles.cardPreview, (match.unreadCount ?? 0) > 0 && styles.cardPreviewUnread]} numberOfLines={1}>{match.lastMessage || "Powiedz cześć! 👋"}</Text>
+                      )}
                     </View>
-                  </Pressable>
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.cardName}>{match.name}, {match.age}</Text>
-                    {match.username && <Text style={styles.cardUsername}>@{match.username}</Text>}
-                    {!isPremium ? (
-                      <View style={styles.lockRow}><Feather name="lock" size={11} color={Colors.textMuted} /><Text style={styles.lockText}>Odblokuj za 24,99 zł/mies.</Text></View>
+                    {(match.unreadCount ?? 0) > 0 ? (
+                      <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{match.unreadCount}</Text></View>
                     ) : (
-                      <Text style={[styles.cardPreview, (match.unreadCount ?? 0) > 0 && styles.cardPreviewUnread]} numberOfLines={1}>{match.lastMessage || "Powiedz cześć! 👋"}</Text>
+                      <Feather name="chevron-right" size={18} color={Colors.textMuted} />
                     )}
-                  </View>
-                  {(match.unreadCount ?? 0) > 0 ? (
-                    <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{match.unreadCount}</Text></View>
-                  ) : (
-                    <Feather name="chevron-right" size={18} color={Colors.textMuted} />
-                  )}
-                </Pressable>
-              </Animated.View>
-            )}
+                  </Pressable>
+                </Animated.View>
+              );
+            }}
             showsVerticalScrollIndicator={false}
           />
         )
@@ -321,4 +399,10 @@ const styles = StyleSheet.create({
   acceptBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center" },
   declineBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", justifyContent: "center" },
   cityText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
+  swipeMsgCard: { borderColor: "rgba(138,43,226,0.3)", backgroundColor: "rgba(138,43,226,0.06)" },
+  swipeMsgBadge: { position: "absolute", bottom: -1, right: -1, width: 20, height: 20, borderRadius: 10, backgroundColor: "#8B5CF6", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: Colors.black },
+  swipeMsgPreview: { fontFamily: "Montserrat_500Medium_Italic" as any, fontSize: 13, color: "#8B5CF6", lineHeight: 18 },
+  swipeMsgTag: { backgroundColor: "rgba(138,43,226,0.2)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  swipeMsgTagText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: "#8B5CF6", letterSpacing: 1 },
+  avatarBlurred: { opacity: 0.3 },
 });

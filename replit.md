@@ -38,6 +38,7 @@ artifacts-monorepo/
 - **Boosts**: Spotlight (5min first in swipe, 4.99zł), Attention (notification to chosen user, 4.99zł), Super Like (special like with animation, 2.99zł), Incognito (15min anonymous browsing, 3.99zł), Mega Boost (30min top + highlighted, 9.99zł)
 - **Likes tab**: Blurred for free users, paywall to unlock
 - **Messages tab**: Matches list with blur paywall for free users  
+- **Swipe Messages**: When swiping right, user can optionally send one message. Recipient sees it in matches tab — but can only view content/reply if mutual match or premium
 - **Chat screen**: Full real-time chat (polling every 4s) with premium paywall
 - **Video tab**: Omegle-like WebRTC video chat with filters (age range, city) — web only
 - **Profile tab**: Full editing (name/age/city/bio/interests) + DEV buttons

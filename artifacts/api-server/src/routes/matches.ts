@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, matchesTable, usersTable, messagesTable } from "@workspace/db";
-import { eq, or, and, desc, sql } from "drizzle-orm";
+import { eq, or, and, desc, sql, asc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -43,6 +43,19 @@ router.get("/matches/:userId", async (req, res) => {
           )
         );
 
+      const swipeMsgs = await db
+        .select()
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.senderId, otherId),
+            eq(messagesTable.receiverId, userId),
+            eq(messagesTable.isSwipeMessage, true)
+          )
+        )
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(1);
+
       return {
         id: user.id,
         name: user.name,
@@ -55,6 +68,7 @@ router.get("/matches/:userId", async (req, res) => {
         matchId: m.id,
         lastMessage: lastMsgArr[0]?.content ?? null,
         unreadCount: Number(unreadArr[0]?.count ?? 0),
+        swipeMessage: swipeMsgs[0]?.content ?? null,
       };
     })
   );
