@@ -76,6 +76,7 @@ interface PartnerInfo {
   name?: string;
   age?: number;
   city?: string;
+  photoUrl?: string;
 }
 
 function NotWebFallback() {
@@ -152,6 +153,7 @@ export default function VideoScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [partnerCameraOn, setPartnerCameraOn] = useState(true);
   const [filterAgeMin, setFilterAgeMin] = useState(18);
   const [filterAgeMax, setFilterAgeMax] = useState(40);
   const [filterCity, setFilterCity] = useState("all");
@@ -228,13 +230,21 @@ export default function VideoScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setStatus("requesting-camera");
     setErrorMsg("");
+    setPartnerCameraOn(true);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      let stream: MediaStream;
+      let hasVideo = true;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        hasVideo = false;
+      }
       localStreamRef.current = stream;
       setLocalStream(stream);
       setMicOn(true);
-      setCameraOn(true);
+      setCameraOn(hasVideo);
 
       const iceServers = await getIceServers();
       const { Peer } = (await import("peerjs")) as any;
@@ -264,6 +274,7 @@ export default function VideoScreen() {
             name: currentUser?.name,
             age: currentUser?.age,
             city: currentUser?.city,
+            photoUrl: currentUser?.photoUrl,
             filterAgeMin,
             filterAgeMax,
             filterCity,
@@ -273,8 +284,12 @@ export default function VideoScreen() {
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
           if (msg.type === "matched") {
-            const { initiator, partnerPeerJsId, partnerName, partnerAge, partnerCity } = msg;
-            setPartnerInfo({ name: partnerName, age: partnerAge, city: partnerCity });
+            const { initiator, partnerPeerJsId, partnerName, partnerAge, partnerCity, partnerPhotoUrl } = msg;
+            setPartnerInfo({ name: partnerName, age: partnerAge, city: partnerCity, photoUrl: partnerPhotoUrl });
+            setPartnerCameraOn(true);
+            if (!hasVideo) {
+              ws.send(JSON.stringify({ type: "camera-toggle", cameraOn: false }));
+            }
             if (partnerPeerJsId) {
               await connectWithPeerJs(initiator, partnerPeerJsId, stream);
             } else {
@@ -284,6 +299,9 @@ export default function VideoScreen() {
           }
           if (msg.type === "partner-disconnected") {
             handlePartnerDisconnect();
+          }
+          if (msg.type === "partner-camera-toggle") {
+            setPartnerCameraOn(!!msg.cameraOn);
           }
         };
 
@@ -356,8 +374,10 @@ export default function VideoScreen() {
 
   const toggleCamera = useCallback(() => {
     if (!localStreamRef.current) return;
+    const newState = !localStreamRef.current.getVideoTracks()[0]?.enabled;
     localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
-    setCameraOn(v => !v);
+    setCameraOn(newState ?? false);
+    wsRef.current?.send(JSON.stringify({ type: "camera-toggle", cameraOn: newState }));
     Haptics.selectionAsync();
   }, []);
 
@@ -465,6 +485,19 @@ export default function VideoScreen() {
                   <WebVideoEl stream={remoteStream} muted={false} mirrored={false} elId="vibe-remote-video" />
                 )}
               </View>
+              {status === "connected" && !partnerCameraOn && (
+                <View style={styles.camOffOverlayFull}>
+                  {partnerInfo?.photoUrl ? (
+                    <Image source={{ uri: partnerInfo.photoUrl }} style={styles.camOffAvatar} />
+                  ) : (
+                    <View style={[styles.camOffAvatar, { backgroundColor: "#333", alignItems: "center", justifyContent: "center" }]}>
+                      <Feather name="user" size={40} color="#888" />
+                    </View>
+                  )}
+                  <Text style={styles.camOffName}>{partnerInfo?.name ?? "Anonim"}</Text>
+                  <Text style={styles.camOffLabel}>Kamera wyłączona</Text>
+                </View>
+              )}
               {status === "waiting" && (
                 <View style={styles.waitingOverlay}>
                   <ActivityIndicator color={Colors.accent} size="large" />
@@ -475,7 +508,7 @@ export default function VideoScreen() {
                   </Text>
                 </View>
               )}
-              {status === "connected" && partnerInfo && (
+              {status === "connected" && partnerInfo && partnerCameraOn && (
                 <Animated.View entering={FadeIn} style={styles.partnerBadge}>
                   <Text style={styles.partnerBadgeName}>
                     {partnerInfo.name ?? "Anonim"}{partnerInfo.age ? `, ${partnerInfo.age}` : ""}
@@ -501,7 +534,11 @@ export default function VideoScreen() {
               </View>
               {!cameraOn && (
                 <View style={styles.camOffOverlay}>
-                  <Feather name="video-off" size={20} color={Colors.textMuted} />
+                  {currentUser?.photoUrl ? (
+                    <Image source={{ uri: currentUser.photoUrl }} style={{ width: 32, height: 32, borderRadius: 16 }} />
+                  ) : (
+                    <Feather name="video-off" size={20} color={Colors.textMuted} />
+                  )}
                 </View>
               )}
             </View>
@@ -735,6 +772,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  camOffOverlayFull: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(17,17,17,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 5,
+  },
+  camOffAvatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
+  camOffName: { fontFamily: "Montserrat_700Bold", fontSize: 18, color: "#fff", marginBottom: 4 },
+  camOffLabel: { fontFamily: "Montserrat_500Medium", fontSize: 13, color: "rgba(255,255,255,0.5)" },
   filterBar: {
     position: "absolute",
     bottom: 80,

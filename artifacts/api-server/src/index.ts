@@ -18,6 +18,7 @@ interface Peer {
   name?: string;
   age?: number;
   city?: string;
+  photoUrl?: string;
   filterAgeMin?: number;
   filterAgeMax?: number;
   filterCity?: string;
@@ -120,6 +121,7 @@ wss.on("connection", (ws) => {
         peer.name = msg.name as string;
         peer.age = msg.age as number;
         peer.city = msg.city as string;
+        peer.photoUrl = (msg.photoUrl as string) ?? undefined;
         peer.peerJsId = (msg.peerJsId as string) ?? undefined;
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? undefined;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? undefined;
@@ -134,8 +136,8 @@ wss.on("connection", (ws) => {
           match.partnerId = peerId;
           connected.set(peerId, peer);
           connected.set(match.peerId, match);
-          sendTo(peer, { type: "matched", initiator: true, partnerName: match.name, partnerAge: match.age, partnerCity: match.city, partnerPeerJsId: match.peerJsId });
-          sendTo(match, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPeerJsId: peer.peerJsId });
+          sendTo(peer, { type: "matched", initiator: true, partnerName: match.name, partnerAge: match.age, partnerCity: match.city, partnerPhotoUrl: match.photoUrl, partnerPeerJsId: match.peerJsId });
+          sendTo(match, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPhotoUrl: peer.photoUrl, partnerPeerJsId: peer.peerJsId });
         }
         break;
       }
@@ -166,8 +168,25 @@ wss.on("connection", (ws) => {
           match2.partnerId = peerId;
           connected.set(peerId, peer);
           connected.set(match2.peerId, match2);
-          sendTo(peer, { type: "matched", initiator: true, partnerName: match2.name, partnerAge: match2.age, partnerCity: match2.city, partnerPeerJsId: match2.peerJsId });
-          sendTo(match2, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPeerJsId: peer.peerJsId });
+          sendTo(peer, { type: "matched", initiator: true, partnerName: match2.name, partnerAge: match2.age, partnerCity: match2.city, partnerPhotoUrl: match2.photoUrl, partnerPeerJsId: match2.peerJsId });
+          sendTo(match2, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPhotoUrl: peer.photoUrl, partnerPeerJsId: peer.peerJsId });
+        }
+        break;
+      }
+      case "camera-toggle": {
+        if (peer.partnerId) {
+          const partner = connected.get(peer.partnerId);
+          if (partner) sendTo(partner, { type: "partner-camera-toggle", cameraOn: msg.cameraOn });
+        }
+        const liveInfo = peerLiveRole.get(peerId);
+        if (liveInfo && liveInfo.role === "host") {
+          const room = liveRooms.get(liveInfo.liveId);
+          if (room) {
+            room.viewerPeerIds.forEach(vId => {
+              const viewer = allPeers.get(vId);
+              if (viewer) sendTo(viewer, { type: "host-camera-toggle", cameraOn: msg.cameraOn });
+            });
+          }
         }
         break;
       }

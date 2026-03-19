@@ -336,6 +336,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
 
   const [connected, setConnected] = useState(false);
+  const [hostCameraOn, setHostCameraOn] = useState(true);
   const [cohostVisible, setCohostVisible] = useState(false);
   const [onStage, setOnStage] = useState(false);
   const [stageInvite, setStageInvite] = useState<{ hostPeerId: string; hostName: string } | null>(null);
@@ -515,6 +516,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         ws.send(JSON.stringify({ type: "cohost-answer", answer, targetPeerId: msg.fromPeerId }));
       }
 
+      if (msg.type === "host-camera-toggle") {
+        setHostCameraOn(!!msg.cameraOn);
+      }
+
       if (msg.type === "live-chat") {
         const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
         setChatMessages(prev => [...prev.slice(-99), chatMsg]);
@@ -625,6 +630,23 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         {Platform.OS === "web" ? (
           <View style={StyleSheet.absoluteFill}>
             <WebVideoEl stream={remoteStream} muted={false} elId="vibe-live-viewer-video" />
+            {connected && !hostCameraOn && (
+              <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(17,17,17,0.95)", alignItems: "center", justifyContent: "center", zIndex: 5 }}>
+                {live?.host.photoUrl ? (
+                  <Image source={{ uri: live.host.photoUrl }} style={{ width: 100, height: 100, borderRadius: 50, marginBottom: 14 }} />
+                ) : (
+                  <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: "#333", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+                    <Feather name="user" size={44} color="#888" />
+                  </View>
+                )}
+                <Text style={{ fontFamily: "Montserrat_700Bold", fontSize: 20, color: "#fff", marginBottom: 4 }}>
+                  {live?.host.name}
+                </Text>
+                <Text style={{ fontFamily: "Montserrat_500Medium", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
+                  Kamera wyłączona
+                </Text>
+              </View>
+            )}
           </View>
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
@@ -916,8 +938,10 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
   const toggleCamera = useCallback(() => {
     if (!localStreamRef.current) return;
+    const newState = !localStreamRef.current.getVideoTracks()[0]?.enabled;
     localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
-    setCameraOn(v => !v);
+    setCameraOn(newState ?? false);
+    wsRef.current?.send(JSON.stringify({ type: "camera-toggle", cameraOn: newState }));
     Haptics.selectionAsync();
   }, []);
 
