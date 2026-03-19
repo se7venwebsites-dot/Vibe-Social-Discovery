@@ -461,11 +461,18 @@ export default function ProfileScreen() {
 
       {/* Logout */}
       <View style={styles.section}>
-        <Pressable style={styles.logoutBtn} onPress={() => {
-          Alert.alert("Wyloguj się", "Czy na pewno chcesz się wylogować?", [
-            { text: "Anuluj", style: "cancel" },
-            { text: "Wyloguj", style: "destructive", onPress: async () => { await devReset(); router.replace("/auth"); } },
-          ]);
+        <Pressable style={styles.logoutBtn} onPress={async () => {
+          if (Platform.OS === "web") {
+            if (window.confirm("Czy na pewno chcesz się wylogować?")) {
+              await devReset();
+              router.replace("/auth");
+            }
+          } else {
+            Alert.alert("Wyloguj się", "Czy na pewno chcesz się wylogować?", [
+              { text: "Anuluj", style: "cancel" },
+              { text: "Wyloguj", style: "destructive", onPress: async () => { await devReset(); router.replace("/auth"); } },
+            ]);
+          }
         }}>
           <Feather name="log-out" size={16} color={Colors.danger} />
           <Text style={styles.logoutBtnText}>Wyloguj się</Text>
