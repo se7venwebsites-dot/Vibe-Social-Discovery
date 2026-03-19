@@ -107,6 +107,8 @@ interface FloatingHeart {
 const FALLBACK_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
   { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
@@ -163,13 +165,31 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:transparent;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
+
+    // Ensure the container itself has a non-zero size
     container.style.position = "relative";
+    container.style.width = "100%";
+    container.style.height = "100%";
+    container.style.minWidth = "1px";
+    container.style.minHeight = "1px";
+
     container.appendChild(video);
 
     if (externalRef) externalRef.current = video;
 
     video.srcObject = stream;
-    
+
+    const onLoadedMetadata = () => {
+      // Some browsers report 0x0 until metadata is loaded
+      video.play().then(() => {
+        if (!muted) video.muted = false;
+      }).catch(() => {
+        // retry quietly
+      });
+    };
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+
     const playWithRetry = () => {
       video.play().then(() => {
         if (!muted) video.muted = false;
@@ -177,11 +197,12 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
         setTimeout(playWithRetry, 100);
       });
     };
-    
+
     playWithRetry();
 
     return () => {
       if (externalRef) externalRef.current = null;
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.srcObject = null;
       container.innerHTML = "";
     };
@@ -407,21 +428,57 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     }
   }, [stageInvite]);
 
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+
+  const setRemoteStreamSafe = useCallback((stream: MediaStream | null) => {
+    remoteStreamRef.current = stream;
+    setRemoteStream(stream);
+  }, []);
+
   const handleHostOffer = useCallback(async (offer: RTCSessionDescriptionInit, hostWsPeerId: string) => {
     if (Platform.OS !== "web") return;
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers } as RTCConfiguration);
     pcRef.current = pc;
 
+    const ensureRemoteStreamHasVideo = (stream: MediaStream) => {
+      const hasVideo = stream.getVideoTracks().length > 0;
+      if (!hasVideo) {
+        console.warn("VIEWER: remote stream does not have a video track yet", stream.getTracks().map(t => `${t.kind}(${t.readyState})`));
+        return false;
+      }
+      return true;
+    };
+
+    const attachIncomingStream = (stream: MediaStream) => {
+      if (!stream) return;
+      if (!ensureRemoteStreamHasVideo(stream)) return;
+      console.warn("VIEWER: remote video track added", {
+        videoTracks: stream.getVideoTracks().map(t => ({ id: t.id, readyState: t.readyState })),
+        audioTracks: stream.getAudioTracks().map(t => ({ id: t.id, readyState: t.readyState })),
+      });
+      setConnected(true);
+      setRemoteStreamSafe(stream);
+    };
+
     pc.ontrack = (e) => {
       console.warn("VIEWER ontrack:", e.track.kind, e.track.readyState);
-      const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();
-      setConnected(true);
-      setRemoteStream(s);
+      const incomingStream = e.streams[0] || new MediaStream();
+      if (e.track) incomingStream.addTrack(e.track);
+      attachIncomingStream(incomingStream);
+    };
+
+    // Some browsers / libs (e.g. older WebRTC implementations) may still fire onaddstream
+    // when the remote stream is available.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pc as any).onaddstream = (e: any) => {
+      console.warn("VIEWER onaddstream", e.stream);
+      attachIncomingStream(e.stream);
     };
 
     pc.onicecandidate = (e) => {
       if (e.candidate && wsRef.current) {
+        console.warn("VIEWER sending ICE candidate", e.candidate);
         wsRef.current.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: hostWsPeerId }));
       }
     };
@@ -441,10 +498,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     wsRef.current?.send(JSON.stringify({ type: "live-answer", answer, targetPeerId: hostWsPeerId }));
 
     for (const ice of pendingIceRef.current) {
-      try { await pc.addIceCandidate(new RTCIceCandidate(ice)); } catch {}
+      try { await pc.addIceCandidate(new RTCIceCandidate(ice)); } catch (err) {
+        console.warn("VIEWER failed to add pending ICE candidate", err);
+      }
     }
     pendingIceRef.current = [];
-  }, [cleanup, onClose]);
+  }, [cleanup, onClose, setRemoteStreamSafe]);
 
   useEffect(() => {
     if (!visible || !live) return;
@@ -629,7 +688,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
           <View style={StyleSheet.absoluteFill}>
-            <WebVideoEl stream={remoteStream} muted={false} elId="vibe-live-viewer-video" />
+            {remoteStream ? (
+              <WebVideoEl stream={remoteStream} muted={false} elId="vibe-live-viewer-video" />
+            ) : null}
             {connected && !hostCameraOn && (
               <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(17,17,17,0.95)", alignItems: "center", justifyContent: "center", zIndex: 5 }}>
                 {live?.host.photoUrl ? (
@@ -1038,12 +1099,32 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             const handleAnswer = async (event: MessageEvent) => {
               try {
                 const m = JSON.parse(event.data);
+
                 if (m.type === "live-answer" && m.fromPeerId === viewerWsId) {
                   await vpc.setRemoteDescription(new RTCSessionDescription(m.answer));
+
+                  const pending = pendingIceMap.current.get(viewerWsId) || [];
+                  for (const ice of pending) {
+                    try {
+                      await vpc.addIceCandidate(new RTCIceCandidate(ice));
+                    } catch (err) {
+                      console.warn("HOST: failed to add pending ICE candidate", err);
+                    }
+                  }
+                  pendingIceMap.current.delete(viewerWsId);
                 }
+
                 if (m.type === "live-ice" && m.fromPeerId === viewerWsId) {
                   if (vpc.remoteDescription) {
-                    try { await vpc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch {}
+                    try {
+                      await vpc.addIceCandidate(new RTCIceCandidate(m.candidate));
+                    } catch (err) {
+                      console.warn("HOST: failed to add ICE candidate", err);
+                    }
+                  } else {
+                    const pending = pendingIceMap.current.get(viewerWsId) ?? [];
+                    pending.push(m.candidate);
+                    pendingIceMap.current.set(viewerWsId, pending);
                   }
                 }
               } catch {}

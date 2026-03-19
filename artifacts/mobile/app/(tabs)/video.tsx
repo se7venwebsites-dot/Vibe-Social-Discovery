@@ -24,6 +24,8 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
 const FALLBACK_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
   { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
@@ -115,11 +117,28 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
     video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:transparent;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
+
+    // Ensure the container itself has a non-zero size
     container.style.position = "relative";
+    container.style.width = "100%";
+    container.style.height = "100%";
+    container.style.minWidth = "1px";
+    container.style.minHeight = "1px";
+
     container.appendChild(video);
 
     video.srcObject = stream;
-    
+
+    const onLoadedMetadata = () => {
+      video.play().then(() => {
+        if (!muted) video.muted = false;
+      }).catch(() => {
+        // play may fail if user hasn't interacted yet; we'll retry below
+      });
+    };
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+
     const playWithRetry = () => {
       video.play().then(() => {
         if (!muted) video.muted = false;
@@ -127,10 +146,11 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
         setTimeout(playWithRetry, 100);
       });
     };
-    
+
     playWithRetry();
 
     return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.srcObject = null;
       container.innerHTML = "";
     };
