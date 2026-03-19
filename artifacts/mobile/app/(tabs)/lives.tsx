@@ -147,9 +147,32 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
   videoRef?: React.MutableRefObject<any>;
   elId: string;
 }) {
+  const containerRef = useRef<any>(null);
+
   useEffect(() => {
-    const container = document.getElementById(elId);
-    if (!container) return;
+    if (typeof document === "undefined") return;
+
+    const findContainer = (): HTMLElement | null => {
+      if (containerRef.current) return containerRef.current;
+      const byId = document.getElementById(elId);
+      if (byId) {
+        containerRef.current = byId;
+        return byId;
+      }
+      const byNative = document.querySelector(`[data-nativeid="${elId}"]`) as HTMLElement | null;
+      if (byNative) {
+        byNative.id = elId;
+        containerRef.current = byNative;
+        return byNative;
+      }
+      return null;
+    };
+
+    const container = findContainer();
+    if (!container) {
+      console.warn("WebVideoEl: container not found for", elId);
+      return;
+    }
 
     container.innerHTML = "";
     if (!stream) {
@@ -206,11 +229,11 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
       video.srcObject = null;
       container.innerHTML = "";
     };
-  }, [stream, muted, mirrored, filter, elId]);
+  }, [stream, muted, mirrored, filter, elId, externalRef]);
 
   return (
     <View style={{ flex: 1, width: "100%", height: "100%" }}>
-      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
+      <View ref={containerRef} nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
     </View>
   );
 }
