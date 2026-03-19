@@ -657,8 +657,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
           </View>
         )}
 
-        <View style={styles.topGradient} pointerEvents="none" />
-        <View style={styles.bottomGradient} pointerEvents="none" />
+        
 
         {Platform.OS === "web" && !connected && (
           <View style={styles.connectingOverlay}>
@@ -1132,8 +1131,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           </View>
         )}
 
-        <View style={styles.topGradient} pointerEvents="none" />
-        <View style={styles.bottomGradient} pointerEvents="none" />
+        
 
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
