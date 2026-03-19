@@ -935,12 +935,6 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         console.warn("Host PeerJS error:", err.type, err.message);
       });
 
-      peer.on("call", (call: any) => {
-        if (localStreamRef.current) {
-          call.answer(localStreamRef.current);
-        }
-      });
-
       peer.on("open", (peerJsId: string) => {
         setBroadcasting(true);
         fetch(`${BASE_URL}/lives/${live.id}/peer`, {
