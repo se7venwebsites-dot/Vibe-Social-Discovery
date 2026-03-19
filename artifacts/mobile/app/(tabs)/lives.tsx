@@ -145,15 +145,25 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
   videoRef?: React.MutableRefObject<any>;
   elId: string;
 }) {
+  const [dbg, setDbg] = useState("init");
+
   useEffect(() => {
     const container = document.getElementById(elId);
-    if (!container) return;
+    if (!container) {
+      setDbg(`NO container for #${elId}`);
+      return;
+    }
 
     container.innerHTML = "";
     if (!stream) {
+      setDbg("stream=null");
       if (externalRef) externalRef.current = null;
       return;
     }
+
+    const vTracks = stream.getVideoTracks();
+    const aTracks = stream.getAudioTracks();
+    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active}`);
 
     const video = document.createElement("video");
     video.autoplay = true;
@@ -170,7 +180,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     video.muted = true;
     video.play().then(() => {
       if (!muted) video.muted = false;
-    }).catch(() => {
+      setDbg(prev => prev + " PLAYING w=" + video.videoWidth + " h=" + video.videoHeight);
+    }).catch((e) => {
+      setDbg(prev => prev + " PLAY_ERR:" + e.message);
       video.muted = true;
       video.play().catch(() => {});
     });
@@ -182,7 +194,14 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     };
   }, [stream, muted, mirrored, filter, elId]);
 
-  return <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />;
+  return (
+    <View style={{ flex: 1, width: "100%", height: "100%" }}>
+      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
+      <Text style={{ position: "absolute", top: 40, left: 10, right: 10, color: "#0f0", fontSize: 11, backgroundColor: "rgba(0,0,0,0.7)", padding: 4, zIndex: 9999 }}>
+        DBG[{elId}]: {dbg}
+      </Text>
+    </View>
+  );
 }
 
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {

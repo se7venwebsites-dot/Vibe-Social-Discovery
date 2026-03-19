@@ -98,12 +98,24 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
   filter?: string;
   elId: string;
 }) {
+  const [dbg, setDbg] = useState("init");
+
   useEffect(() => {
     const container = document.getElementById(elId);
-    if (!container) return;
+    if (!container) {
+      setDbg(`NO container #${elId}`);
+      return;
+    }
 
     container.innerHTML = "";
-    if (!stream) return;
+    if (!stream) {
+      setDbg("stream=null");
+      return;
+    }
+
+    const vTracks = stream.getVideoTracks();
+    const aTracks = stream.getAudioTracks();
+    setDbg(`v:${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a:${aTracks.length} active:${stream.active}`);
 
     const video = document.createElement("video");
     video.autoplay = true;
@@ -118,7 +130,9 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
     video.muted = true;
     video.play().then(() => {
       if (!muted) video.muted = false;
-    }).catch(() => {
+      setDbg(prev => prev + " PLAYING w=" + video.videoWidth + " h=" + video.videoHeight);
+    }).catch((e) => {
+      setDbg(prev => prev + " PLAY_ERR:" + e.message);
       video.muted = true;
       video.play().catch(() => {});
     });
@@ -129,7 +143,14 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
     };
   }, [stream, muted, mirrored, filter, elId]);
 
-  return <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />;
+  return (
+    <View style={{ flex: 1, width: "100%", height: "100%" }}>
+      <View nativeID={elId} style={{ flex: 1, width: "100%", height: "100%" }} />
+      <Text style={{ position: "absolute", top: 4, left: 4, right: 4, color: "#0f0", fontSize: 10, backgroundColor: "rgba(0,0,0,0.7)", padding: 3, zIndex: 9999 }}>
+        [{elId}]: {dbg}
+      </Text>
+    </View>
+  );
 }
 
 export default function VideoScreen() {
