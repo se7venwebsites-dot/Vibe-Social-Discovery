@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, real, serial, text } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, real, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -16,6 +16,7 @@ export const usersTable = pgTable("users", {
   passwordHash: text("password_hash"),
   lat: real("lat"),
   lng: real("lng"),
+  lastLocationUpdate: timestamp("last_location_update"),
 });
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true });

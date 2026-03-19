@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { usePathname, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -25,12 +26,24 @@ interface MapUser {
   lat: number;
   lng: number;
   isPremium: boolean;
+  lastLocationUpdate?: string | null;
 }
 
 interface SelectedPin {
   user: MapUser;
   x: number;
   y: number;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "teraz";
+  if (mins < 60) return `${mins} min temu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} godz. temu`;
+  const days = Math.floor(hours / 24);
+  return `${days} dn. temu`;
 }
 
 function MapFallback() {
@@ -48,17 +61,54 @@ function MapFallback() {
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
-  const { isPremium, activatePremium } = useUserContext();
+  const { currentUser, isPremium, activatePremium } = useUserContext();
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const mapContainerRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<MapUser[]>([]);
   const [selectedPin, setSelectedPin] = useState<SelectedPin | null>(null);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const sendLocation = useCallback(async (lat: number, lng: number) => {
+    if (!currentUser) return;
+    try {
+      await fetch(`${BASE_URL}/users/${currentUser.id}/location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      });
+    } catch {}
+  }, [currentUser]);
+
+  const requestGeolocation = useCallback(() => {
+    if (Platform.OS !== "web" || !navigator.geolocation) return;
+    setLocationStatus("requesting");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocationStatus("granted");
+        sendLocation(pos.coords.latitude, pos.coords.longitude);
+        if (mapRef.current) {
+          mapRef.current.setView([pos.coords.latitude, pos.coords.longitude], 12);
+        }
+      },
+      () => {
+        setLocationStatus("denied");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, [sendLocation]);
 
   useEffect(() => {
-    if (Platform.OS !== "web") return;
+    if (Platform.OS !== "web" || pathname !== "/map") return;
+    requestGeolocation();
+  }, [pathname, requestGeolocation]);
+
+  const fetchUsers = useCallback(() => {
     fetch(`${BASE_URL}/users/map`)
       .then(r => r.json())
       .then(data => setUsers(data))
@@ -67,9 +117,17 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS !== "web") return;
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
     if (Platform.OS !== "web" || !mapReady || users.length === 0) return;
     const L = (window as any).L;
     if (!L || !mapRef.current) return;
+
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
 
     users.forEach(user => {
       if (!user.lat || !user.lng) return;
@@ -82,7 +140,7 @@ export default function MapScreen() {
         iconAnchor: [22, 22],
         className: "",
       });
-      L.marker([user.lat, user.lng], { icon })
+      const marker = L.marker([user.lat, user.lng], { icon })
         .addTo(mapRef.current)
         .on("click", (e: any) => {
           const containerRect = document.getElementById("vibe-map")?.getBoundingClientRect();
@@ -94,6 +152,7 @@ export default function MapScreen() {
             });
           }
         });
+      markersRef.current.push(marker);
     });
   }, [users, mapReady]);
 
@@ -179,9 +238,17 @@ export default function MapScreen() {
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Mapa</Text>
-        <View style={styles.headerBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.headerBadgeText}>{users.length} użytkowników</Text>
+        <View style={styles.headerRight}>
+          {locationStatus === "denied" && (
+            <Pressable style={styles.locationDeniedChip} onPress={requestGeolocation}>
+              <Feather name="map-pin" size={11} color={Colors.danger} />
+              <Text style={styles.locationDeniedText}>Lokalizacja wyłączona</Text>
+            </Pressable>
+          )}
+          <View style={styles.headerBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.headerBadgeText}>{users.length} użytkowników</Text>
+          </View>
         </View>
       </View>
 
@@ -202,7 +269,7 @@ export default function MapScreen() {
             entering={FadeInDown.springify()}
             style={[styles.pinPopup, {
               left: Math.min(selectedPin.x - 80, 260),
-              top: Math.max(selectedPin.y - 160, 10),
+              top: Math.max(selectedPin.y - 200, 10),
             }]}
           >
             <Pressable onPress={() => setSelectedPin(null)} style={styles.pinPopupClose}>
@@ -216,12 +283,27 @@ export default function MapScreen() {
                 <Text style={styles.pinPopupCityText}>{selectedPin.user.city}</Text>
               </View>
             )}
+            {selectedPin.user.lastLocationUpdate && (
+              <View style={styles.pinPopupCity}>
+                <Feather name="clock" size={10} color={Colors.textMuted} />
+                <Text style={styles.pinPopupCityText}>{timeAgo(selectedPin.user.lastLocationUpdate)}</Text>
+              </View>
+            )}
             {selectedPin.user.isPremium && (
               <View style={styles.pinPopupPremium}>
                 <Feather name="zap" size={10} color={Colors.black} />
                 <Text style={styles.pinPopupPremiumText}>VIBE+</Text>
               </View>
             )}
+            <Pressable
+              style={styles.pinPopupProfileBtn}
+              onPress={() => {
+                setSelectedPin(null);
+                router.push(`/user/${selectedPin.user.id}` as any);
+              }}
+            >
+              <Text style={styles.pinPopupProfileBtnText}>Zobacz profil</Text>
+            </Pressable>
           </Animated.View>
         )}
       </View>
@@ -233,9 +315,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accent },
   headerBadgeText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textSecondary },
+  locationDeniedChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,59,48,0.15)", borderWidth: 1, borderColor: "rgba(255,59,48,0.3)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  locationDeniedText: { fontFamily: "Montserrat_500Medium", fontSize: 11, color: Colors.danger },
   mapWrapper: { flex: 1, position: "relative" },
   mapContainer: { flex: 1, backgroundColor: "#0a0a0a" },
   mapLoading: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.7)", zIndex: 10, gap: 12 },
@@ -248,7 +333,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 14,
-    width: 160,
+    width: 170,
     alignItems: "center",
     gap: 6,
     shadowColor: "#000",
@@ -256,13 +341,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
   },
-  pinPopupClose: { position: "absolute", top: 8, right: 8 },
+  pinPopupClose: { position: "absolute", top: 8, right: 8, zIndex: 2 },
   pinPopupAvatar: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: Colors.accent },
   pinPopupName: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.textPrimary, textAlign: "center" },
   pinPopupCity: { flexDirection: "row", alignItems: "center", gap: 4 },
   pinPopupCityText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
   pinPopupPremium: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.accent, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   pinPopupPremiumText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: Colors.black },
+  pinPopupProfileBtn: { backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: Colors.border, marginTop: 2 },
+  pinPopupProfileBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.accent },
   fallback: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 16 },
   fallbackTitle: { fontFamily: "Montserrat_700Bold", fontSize: 22, color: Colors.textPrimary },
   fallbackText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 21 },

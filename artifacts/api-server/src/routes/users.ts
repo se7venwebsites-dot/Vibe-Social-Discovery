@@ -61,10 +61,25 @@ router.get("/users/map", async (req, res) => {
     lat: usersTable.lat,
     lng: usersTable.lng,
     isPremium: usersTable.isPremium,
+    lastLocationUpdate: usersTable.lastLocationUpdate,
   }).from(usersTable).where(
     and(isNotNull(usersTable.lat), isNotNull(usersTable.lng))
   ).limit(200);
   res.json(users);
+});
+
+router.post("/users/:id/location", async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+  const { lat, lng } = req.body;
+  if (lat == null || lng == null) { res.status(400).json({ error: "lat and lng required" }); return; }
+  const [updated] = await db.update(usersTable).set({
+    lat: parseFloat(lat),
+    lng: parseFloat(lng),
+    lastLocationUpdate: new Date(),
+  }).where(eq(usersTable.id, id)).returning();
+  if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+  res.json({ success: true });
 });
 
 router.post("/users/register", async (req, res) => {

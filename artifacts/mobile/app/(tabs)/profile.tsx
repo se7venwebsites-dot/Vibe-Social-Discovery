@@ -459,32 +459,16 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* Dev tools */}
+      {/* Logout */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Narzędzia DEV</Text>
-        {!isPremium && (
-          <Pressable style={styles.devBtn} onPress={async () => { await activatePremium(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }}>
-            <Feather name="zap" size={14} color={Colors.accent} />
-            <Text style={styles.devBtnText}>DEV: Aktywuj Premium</Text>
-          </Pressable>
-        )}
-        <Pressable style={styles.devBtn} onPress={async () => {
-          const newCoins = coins + 500;
-          setCoins(newCoins);
-          await AsyncStorage.setItem(COINS_KEY, String(newCoins));
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }}>
-          <Text style={{ fontSize: 14 }}>💰</Text>
-          <Text style={styles.devBtnText}>DEV: +500 monet</Text>
-        </Pressable>
-        <Pressable style={[styles.devBtn, styles.devBtnDanger]} onPress={() => {
-          Alert.alert("Resetuj profil", "Czy na pewno chcesz zresetować konto?", [
+        <Pressable style={styles.logoutBtn} onPress={() => {
+          Alert.alert("Wyloguj się", "Czy na pewno chcesz się wylogować?", [
             { text: "Anuluj", style: "cancel" },
-            { text: "Resetuj", style: "destructive", onPress: async () => { await devReset(); router.replace("/onboarding"); } },
+            { text: "Wyloguj", style: "destructive", onPress: async () => { await devReset(); router.replace("/auth"); } },
           ]);
         }}>
-          <Feather name="trash-2" size={14} color={Colors.danger} />
-          <Text style={[styles.devBtnText, { color: Colors.danger }]}>DEV: Resetuj profil</Text>
+          <Feather name="log-out" size={16} color={Colors.danger} />
+          <Text style={styles.logoutBtnText}>Wyloguj się</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -568,11 +552,10 @@ const styles = StyleSheet.create({
   premiumCardTitle: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
   premiumCardSub: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: "rgba(0,0,0,0.6)" },
   premiumCardPrice: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.black },
-  devBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13 },
-  devBtnDanger: { borderColor: "rgba(255,59,92,0.3)" },
+  logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: "rgba(255,59,92,0.3)", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 15 },
+  logoutBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.danger },
   shopBtn: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: Colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: "rgba(204,255,0,0.2)", padding: 14, marginHorizontal: 16 },
   shopBtnIcon: { fontSize: 28 },
   shopBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary },
   shopBtnSub: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textSecondary },
-  devBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.accent },
 });
