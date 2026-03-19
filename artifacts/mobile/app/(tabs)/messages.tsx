@@ -58,7 +58,7 @@ interface Friend {
 
 export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
-  const { currentUser, isPremium } = useUserContext();
+  const { currentUser, isPremium, activatePremium } = useUserContext();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("matches");
   const [showPremium, setShowPremium] = useState(false);
@@ -352,7 +352,7 @@ export default function MessagesScreen() {
         )
       )}
 
-      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} onActivate={async () => setShowPremium(false)} />
+      <PremiumModal visible={showPremium} onClose={() => setShowPremium(false)} onActivate={async () => { await activatePremium(); setShowPremium(false); }} />
     </View>
   );
 }
