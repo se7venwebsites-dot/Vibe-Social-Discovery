@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { usePathname } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -380,6 +381,17 @@ export default function VideoScreen() {
     wsRef.current?.send(JSON.stringify({ type: "camera-toggle", cameraOn: newState }));
     Haptics.selectionAsync();
   }, []);
+
+  const pathname = usePathname();
+  useEffect(() => {
+    if (pathname !== "/video") {
+      cleanup();
+      setStatus("idle");
+      setLocalStream(null);
+      setRemoteStream(null);
+      setPartnerInfo(null);
+    }
+  }, [pathname]);
 
   useEffect(() => { return () => { cleanup(); }; }, []);
 
