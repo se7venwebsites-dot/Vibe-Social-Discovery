@@ -75,6 +75,51 @@ function NotWebFallback() {
   );
 }
 
+function WebVideoEl({ stream, muted = false, mirrored = false, filter = "" }: {
+  stream: MediaStream | null;
+  muted?: boolean;
+  mirrored?: boolean;
+  filter?: string;
+}) {
+  const videoRef = useRef<any>(null);
+
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (!v) return;
+    if (!stream) {
+      v.srcObject = null;
+      return;
+    }
+    v.srcObject = stream;
+    v.muted = true;
+    v.play().then(() => {
+      if (!muted) v.muted = false;
+    }).catch(() => {
+      v.muted = true;
+      v.play().catch(() => {});
+    });
+  }, [stream, muted]);
+
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (v) v.style.filter = filter;
+  }, [filter]);
+
+  return React.createElement("video", {
+    ref: videoRef,
+    autoPlay: true,
+    playsInline: true,
+    muted: muted,
+    style: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      transform: mirrored ? "scaleX(-1)" : "none",
+      display: "block",
+    },
+  });
+}
+
 export default function VideoScreen() {
   const insets = useSafeAreaInsets();
   const { currentUser } = useUserContext();
@@ -86,98 +131,27 @@ export default function VideoScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
-
   const [filterAgeMin, setFilterAgeMin] = useState(18);
   const [filterAgeMax, setFilterAgeMax] = useState(40);
   const [filterCity, setFilterCity] = useState("all");
+  const [activeCamFilter, setActiveCamFilter] = useState("none");
+  const [showCamFilters, setShowCamFilters] = useState(false);
+
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const peerRef = useRef<any>(null);
   const activeCallRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteContainerRef = useRef<any>(null);
-  const localContainerRef = useRef<any>(null);
-  const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
-  const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
-  const localVideoElRef = useRef<HTMLVideoElement | null>(null);
-  const [activeCamFilter, setActiveCamFilter] = useState("none");
-  const [showCamFilters, setShowCamFilters] = useState(false);
 
-  const playVideoEl = (video: HTMLVideoElement, stream: MediaStream, muted = false) => {
-    video.srcObject = stream;
-    video.muted = true;
-    video.play().then(() => {
-      if (!muted) video.muted = false;
-    }).catch(() => {
-      video.muted = true;
-      video.play().catch(() => {});
-    });
-  };
-
-  const applyFilter = useCallback((filterId: string) => {
-    setActiveCamFilter(filterId);
-    if (Platform.OS !== "web") return;
-    const video = localVideoElRef.current;
-    if (video) {
-      const filter = CAM_FILTERS.find(f => f.id === filterId);
-      video.style.filter = filter?.css || "";
-    }
-  }, []);
-
-  const attachLocalVideo = useCallback((container: HTMLElement, stream: MediaStream) => {
-    if (!container) return;
-    let video = localVideoElRef.current;
-    if (!video || !container.contains(video)) {
-      container.innerHTML = "";
-      video = document.createElement("video");
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
-      container.appendChild(video);
-      localVideoElRef.current = video;
-    }
-    playVideoEl(video, stream, true);
-  }, []);
-
-  const attachRemoteVideo = useCallback((container: HTMLElement | null, stream: MediaStream | null) => {
-    if (!stream) {
-      if (remoteVideoElRef.current) {
-        remoteVideoElRef.current.srcObject = null;
-        remoteVideoElRef.current = null;
-      }
-      return;
-    }
-    const el = container || remoteContainerRef.current;
-    if (!el) {
-      pendingRemoteStreamRef.current = stream;
-      return;
-    }
-    let video = remoteVideoElRef.current;
-    if (!video || !el.contains(video)) {
-      el.innerHTML = "";
-      video = document.createElement("video");
-      video.autoplay = true;
-      video.playsInline = true;
-      video.style.cssText = "width:100%;height:100%;object-fit:cover;";
-      el.appendChild(video);
-      remoteVideoElRef.current = video;
-    }
-    playVideoEl(video, stream, false);
-    pendingRemoteStreamRef.current = null;
-  }, []);
-
-  const setRemoteVideo = useCallback((stream: MediaStream | null) => {
-    if (Platform.OS !== "web") return;
-    const container = remoteContainerRef.current;
-    attachRemoteVideo(container, stream);
-  }, [attachRemoteVideo]);
+  const activeFilter = CAM_FILTERS.find(f => f.id === activeCamFilter);
 
   const handlePartnerDisconnect = useCallback(() => {
     setPartnerInfo(null);
     setStatus("waiting");
+    setRemoteStream(null);
     if (activeCallRef.current) { try { activeCallRef.current.close(); } catch {} activeCallRef.current = null; }
-    setRemoteVideo(null);
   }, []);
 
   const destroyPeer = useCallback(() => {
@@ -192,13 +166,8 @@ export default function VideoScreen() {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
-    localVideoElRef.current = null;
-    remoteVideoElRef.current = null;
-    pendingRemoteStreamRef.current = null;
-    if (Platform.OS === "web") {
-      if (localContainerRef.current) localContainerRef.current.innerHTML = "";
-      if (remoteContainerRef.current) remoteContainerRef.current.innerHTML = "";
-    }
+    setLocalStream(null);
+    setRemoteStream(null);
   }, [destroyPeer]);
 
   const connectWithPeerJs = useCallback(async (
@@ -211,8 +180,8 @@ export default function VideoScreen() {
       const call = peerRef.current.call(partnerPeerJsId, stream);
       if (!call) return;
       activeCallRef.current = call;
-      call.on("stream", (remoteStream: MediaStream) => {
-        setRemoteVideo(remoteStream);
+      call.on("stream", (rs: MediaStream) => {
+        setRemoteStream(rs);
         setStatus("connected");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       });
@@ -222,8 +191,8 @@ export default function VideoScreen() {
       peerRef.current.on("call", (call: any) => {
         activeCallRef.current = call;
         call.answer(stream);
-        call.on("stream", (remoteStream: MediaStream) => {
-          setRemoteVideo(remoteStream);
+        call.on("stream", (rs: MediaStream) => {
+          setRemoteStream(rs);
           setStatus("connected");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         });
@@ -236,26 +205,21 @@ export default function VideoScreen() {
   const handleConnect = useCallback(async () => {
     if (Platform.OS !== "web") return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     setStatus("requesting-camera");
     setErrorMsg("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
+      setLocalStream(stream);
       setMicOn(true);
       setCameraOn(true);
-
-      if (localContainerRef.current) {
-        attachLocalVideo(localContainerRef.current, stream);
-      }
 
       const { Peer } = (await import("peerjs")) as any;
       const peer = new Peer(PEER_CONFIG);
       peerRef.current = peer;
 
       peer.on("error", (err: any) => {
-        console.warn("PeerJS error:", err.type, err.message);
         if (err.type === "peer-unavailable") {
           handlePartnerDisconnect();
         } else if (err.type !== "server-error") {
@@ -267,7 +231,6 @@ export default function VideoScreen() {
 
       peer.on("open", (myPeerId: string) => {
         setStatus("waiting");
-
         const ws = new WebSocket(WS_URL);
         wsRef.current = ws;
 
@@ -287,7 +250,6 @@ export default function VideoScreen() {
 
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
-
           if (msg.type === "matched") {
             const { initiator, partnerPeerJsId, partnerName, partnerAge, partnerCity } = msg;
             setPartnerInfo({ name: partnerName, age: partnerAge, city: partnerCity });
@@ -298,16 +260,12 @@ export default function VideoScreen() {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
           }
-
           if (msg.type === "partner-disconnected") {
             handlePartnerDisconnect();
           }
         };
 
-        ws.onclose = () => {
-          if (status !== "idle") setStatus("idle");
-        };
-
+        ws.onclose = () => { if (status !== "idle") setStatus("idle"); };
         ws.onerror = () => {
           setErrorMsg("Błąd połączenia z serwerem.");
           setStatus("error");
@@ -327,12 +285,11 @@ export default function VideoScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setPartnerInfo(null);
     setStatus("waiting");
+    setRemoteStream(null);
     if (activeCallRef.current) { try { activeCallRef.current.close(); } catch {} activeCallRef.current = null; }
-    setRemoteVideo(null);
 
     const stream = localStreamRef.current;
     if (!stream) return;
-
     if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
 
     const createNewPeer = async () => {
@@ -340,25 +297,17 @@ export default function VideoScreen() {
       const peer = new Peer(PEER_CONFIG);
       peerRef.current = peer;
       peer.on("error", (err: any) => {
-        if (err.type === "peer-unavailable") {
-          handlePartnerDisconnect();
-        }
+        if (err.type === "peer-unavailable") handlePartnerDisconnect();
       });
       peer.on("open", (myPeerId: string) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: "next",
-            peerJsId: myPeerId,
-            filterAgeMin,
-            filterAgeMax,
-            filterCity,
-          }));
+          wsRef.current.send(JSON.stringify({ type: "next", peerJsId: myPeerId, filterAgeMin, filterAgeMax, filterCity }));
         }
         peer.on("call", (call: any) => {
           activeCallRef.current = call;
           call.answer(stream);
-          call.on("stream", (remoteStream: MediaStream) => {
-            setRemoteVideo(remoteStream);
+          call.on("stream", (rs: MediaStream) => {
+            setRemoteStream(rs);
             setStatus("connected");
           });
           call.on("close", () => handlePartnerDisconnect());
@@ -389,17 +338,7 @@ export default function VideoScreen() {
     Haptics.selectionAsync();
   }, []);
 
-  useEffect(() => {
-    return () => { cleanup(); };
-  }, []);
-
-  const onRemoteContainerLayout = useCallback((node: any) => {
-    if (!node) return;
-    remoteContainerRef.current = node;
-    if (pendingRemoteStreamRef.current) {
-      attachRemoteVideo(node, pendingRemoteStreamRef.current);
-    }
-  }, [attachRemoteVideo]);
+  useEffect(() => { return () => { cleanup(); }; }, []);
 
   if (Platform.OS !== "web") {
     return (
@@ -437,7 +376,6 @@ export default function VideoScreen() {
       {showFilters && (status === "idle" || status === "error") && (
         <Animated.View entering={FadeInDown.springify()} exiting={FadeOut} style={styles.filtersBox}>
           <Text style={styles.filtersTitle}>Filtry wyszukiwania</Text>
-
           <Text style={styles.filterLabel}>Wiek: {filterAgeMin}–{filterAgeMax} lat</Text>
           <View style={styles.ageRow}>
             {[[18, 25], [20, 30], [25, 35], [30, 40], [35, 50], [18, 50]].map(([mn, mx]) => (
@@ -452,7 +390,6 @@ export default function VideoScreen() {
               </Pressable>
             ))}
           </View>
-
           <Text style={[styles.filterLabel, { marginTop: 12 }]}>Miasto</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.cityRow}>
@@ -500,10 +437,11 @@ export default function VideoScreen() {
         ) : (
           <>
             <View style={styles.remoteVideoWrap}>
-              <View
-                ref={onRemoteContainerLayout}
-                style={styles.remoteVideoInner}
-              />
+              <View style={styles.remoteVideoInner}>
+                {remoteStream && (
+                  <WebVideoEl stream={remoteStream} muted={false} mirrored={false} />
+                )}
+              </View>
               {status === "waiting" && (
                 <View style={styles.waitingOverlay}>
                   <ActivityIndicator color={Colors.accent} size="large" />
@@ -527,10 +465,16 @@ export default function VideoScreen() {
             </View>
 
             <View style={styles.localVideoWrap}>
-              <View
-                ref={localContainerRef}
-                style={styles.localVideoInner}
-              />
+              <View style={styles.localVideoInner}>
+                {localStream && (
+                  <WebVideoEl
+                    stream={localStream}
+                    muted={true}
+                    mirrored={true}
+                    filter={activeFilter?.css || ""}
+                  />
+                )}
+              </View>
               {!cameraOn && (
                 <View style={styles.camOffOverlay}>
                   <Feather name="video-off" size={20} color={Colors.textMuted} />
@@ -543,13 +487,13 @@ export default function VideoScreen() {
 
       {(status === "waiting" || status === "connected") && (
         <>
-          {showCamFilters && Platform.OS === "web" && (
+          {showCamFilters && (
             <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filterBar}>
               {CAM_FILTERS.map(f => (
                 <Pressable
                   key={f.id}
                   style={[styles.filterTag, activeCamFilter === f.id && styles.filterTagActive]}
-                  onPress={() => { applyFilter(f.id); Haptics.selectionAsync(); }}
+                  onPress={() => { setActiveCamFilter(f.id); Haptics.selectionAsync(); }}
                 >
                   <Text style={[styles.filterTagText, activeCamFilter === f.id && styles.filterTagTextActive]}>{f.label}</Text>
                 </Pressable>
@@ -578,7 +522,7 @@ export default function VideoScreen() {
               <Feather name={cameraOn ? "video" : "video-off"} size={22} color={cameraOn ? Colors.accent : Colors.textMuted} />
             </Pressable>
 
-            {status === "connected" && Platform.OS === "web" ? (
+            {status === "connected" ? (
               <Pressable
                 style={({ pressed }) => [styles.ctrlBtn, showCamFilters && styles.ctrlBtnFilterActive, pressed && { opacity: 0.8 }]}
                 onPress={() => { setShowCamFilters(s => !s); Haptics.selectionAsync(); }}
@@ -722,7 +666,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardBg,
     position: "relative",
   },
-  remoteVideoInner: { flex: 1, backgroundColor: "#0a0a0a" },
+  remoteVideoInner: { flex: 1, backgroundColor: "#0a0a0a", overflow: "hidden" },
   waitingOverlay: {
     position: "absolute",
     top: 0, left: 0, right: 0, bottom: 0,
@@ -759,7 +703,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent,
     backgroundColor: Colors.cardBg,
   },
-  localVideoInner: { flex: 1 },
+  localVideoInner: { flex: 1, overflow: "hidden" },
   camOffOverlay: {
     position: "absolute",
     top: 0, left: 0, right: 0, bottom: 0,

@@ -120,11 +120,48 @@ const PEER_CONFIG = {
   config: { iceServers: ICE_SERVERS },
 };
 
-function getElWithRetry(id: string, cb: (el: HTMLElement) => void, retries = 15, delay = 80) {
-  if (typeof document === "undefined") return;
-  const el = document.getElementById(id);
-  if (el) { cb(el); return; }
-  if (retries > 0) setTimeout(() => getElWithRetry(id, cb, retries - 1, delay), delay);
+function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", videoRef: externalRef }: {
+  stream: MediaStream | null;
+  muted?: boolean;
+  mirrored?: boolean;
+  filter?: string;
+  videoRef?: React.MutableRefObject<any>;
+}) {
+  const internalRef = useRef<any>(null);
+  const videoRef = externalRef || internalRef;
+
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (!v) return;
+    if (!stream) { v.srcObject = null; return; }
+    v.srcObject = stream;
+    v.muted = true;
+    v.play().then(() => {
+      if (!muted) v.muted = false;
+    }).catch(() => {
+      v.muted = true;
+      v.play().catch(() => {});
+    });
+  }, [stream, muted]);
+
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (v && filter !== undefined) v.style.filter = filter;
+  }, [filter]);
+
+  return React.createElement("video", {
+    ref: videoRef,
+    autoPlay: true,
+    playsInline: true,
+    muted: muted,
+    style: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      transform: mirrored ? "scaleX(-1)" : "none",
+      display: "block",
+    },
+  });
 }
 
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
@@ -280,33 +317,11 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const [giftToasts, setGiftToasts] = useState<GiftToastItem[]>([]);
   const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [coins, setCoins] = useState(2000);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [cohostStream, setCohostStream] = useState<MediaStream | null>(null);
+  const [myStageStream, setMyStageStream] = useState<MediaStream | null>(null);
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
-
-  const setVideoSrc = (container: HTMLElement | null, stream: MediaStream, mirrored = false) => {
-    if (!container || !stream) return;
-    let v = container.querySelector("video") as HTMLVideoElement | null;
-    if (!v) {
-      v = document.createElement("video");
-      v.autoplay = true;
-      v.playsInline = true;
-      v.style.cssText = `width:100%;height:100%;object-fit:cover;${mirrored ? "transform:scaleX(-1);" : ""}`;
-      container.appendChild(v);
-    }
-    v.srcObject = stream;
-    if (mirrored) {
-      v.muted = true;
-      v.play().catch(() => {});
-    } else {
-      v.muted = true;
-      v.play().then(() => {
-        v!.muted = false;
-      }).catch(() => {
-        v!.muted = true;
-        v!.play().catch(() => {});
-      });
-    }
-  };
 
   const cleanup = useCallback(() => {
     if (viewerCallRef.current) { try { viewerCallRef.current.close(); } catch {} viewerCallRef.current = null; }
@@ -326,10 +341,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     setGiftToasts([]);
     setFloatingHearts([]);
     setAddedFriend(false);
-    if (Platform.OS === "web") {
-      const rc = document.getElementById("vibe-live-remote");
-      if (rc) rc.innerHTML = "";
-    }
+    setRemoteStream(null);
+    setCohostStream(null);
+    setMyStageStream(null);
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: -1 }) }).catch(() => {});
     }
@@ -342,9 +356,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       myStageStreamRef.current = stream;
-      getElWithRetry("vibe-live-mycam", (camContainer) => {
-        setVideoSrc(camContainer as HTMLElement, stream, true);
-      });
+      setMyStageStream(stream);
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       cohostPcRef.current = pc;
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -395,11 +407,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       const call = peer.call(hostPeerJsId, silentStream);
       if (!call) return;
       viewerCallRef.current = call;
-      call.on("stream", (remoteStream: MediaStream) => {
+      call.on("stream", (rs: MediaStream) => {
         setConnected(true);
-        getElWithRetry("vibe-live-remote", (container) => {
-          setVideoSrc(container as HTMLElement, remoteStream);
-        });
+        setRemoteStream(rs);
       });
       call.on("close", () => {
         Alert.alert("Live zakończony", "Gospodarz zakończył transmisję.");
@@ -462,9 +472,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         coPc.ontrack = (e) => {
           const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
           setCohostVisible(true);
-          getElWithRetry("vibe-live-cohost", (container) => {
-            setVideoSrc(container as HTMLElement, stream);
-          });
+          setCohostStream(stream);
         };
         coPc.onicecandidate = (e) => {
           if (e.candidate) ws.send(JSON.stringify({ type: "cohost-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
@@ -583,7 +591,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
       <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
-          <View nativeID="vibe-live-remote" style={StyleSheet.absoluteFill} />
+          <View style={StyleSheet.absoluteFill}>
+            <WebVideoEl stream={remoteStream} muted={false} />
+          </View>
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
@@ -734,10 +744,14 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         )}
 
         {cohostVisible && Platform.OS === "web" && (
-          <View nativeID="vibe-live-cohost" style={styles.cohostPip} />
+          <View style={[styles.cohostPip, { overflow: "hidden" }]}>
+            <WebVideoEl stream={cohostStream} muted={false} />
+          </View>
         )}
         {onStage && Platform.OS === "web" && (
-          <View nativeID="vibe-live-mycam" style={styles.myCamPip} />
+          <View style={[styles.myCamPip, { overflow: "hidden" }]}>
+            <WebVideoEl stream={myStageStream} muted={true} mirrored={true} />
+          </View>
         )}
 
         {stageInvite && (
@@ -784,18 +798,14 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [broadcastError, setBroadcastError] = useState("");
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [cohostStream, setCohostStream] = useState<MediaStream | null>(null);
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
+  const hostVideoRef = useRef<any>(null);
 
   const applyFilter = useCallback((filterId: string) => {
     setActiveFilter(filterId);
-    if (Platform.OS !== "web") return;
-    const container = document.getElementById("vibe-host-video");
-    const video = container?.querySelector("video") as HTMLVideoElement | null;
-    if (video) {
-      const filter = CAM_FILTERS.find(f => f.id === filterId);
-      video.style.filter = filter?.css || "";
-    }
   }, []);
 
   const distributeCohost = useCallback(async (stream: MediaStream, ws: WebSocket) => {
@@ -827,12 +837,6 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     if (wsRef.current) { try { wsRef.current.send(JSON.stringify({ type: "end-live" })); } catch {} wsRef.current.close(); wsRef.current = null; }
     if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
-    if (Platform.OS === "web") {
-      const c = document.getElementById("vibe-host-video");
-      if (c) c.innerHTML = "";
-      const ch = document.getElementById("vibe-host-cohost");
-      if (ch) ch.innerHTML = "";
-    }
     setBroadcasting(false);
     setViewerCount(0);
     setCohostVisible(false);
@@ -845,6 +849,8 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     setBroadcastError("");
     setMicOn(true);
     setCameraOn(true);
+    setLocalStream(null);
+    setCohostStream(null);
   }, []);
 
   const endLive = useCallback(() => {
@@ -874,12 +880,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
     setCameraOn(v => !v);
     Haptics.selectionAsync();
-    if (Platform.OS === "web") {
-      const c = document.getElementById("vibe-host-video");
-      const v = c?.querySelector("video") as HTMLVideoElement | null;
-      if (v) v.style.display = cameraOn ? "none" : "";
-    }
-  }, [cameraOn]);
+  }, []);
 
   useEffect(() => {
     if (!visible || !live || Platform.OS !== "web") return;
@@ -896,18 +897,9 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         return;
       }
       localStreamRef.current = stream;
+      setLocalStream(stream);
       setMicOn(true);
       setCameraOn(true);
-      const attachHostVideo = (c: HTMLElement) => {
-        c.innerHTML = "";
-        const v = document.createElement("video");
-        v.autoplay = true; v.muted = true; v.playsInline = true;
-        v.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
-        v.srcObject = stream;
-        c.appendChild(v);
-        v.play().catch(() => {});
-      };
-      getElWithRetry("vibe-host-video", attachHostVideo);
 
       const { Peer } = (await import("peerjs")) as any;
       const peer = new Peer(PEER_CONFIG);
@@ -971,13 +963,8 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             pc.ontrack = (e) => {
               const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();
               cohostStreamRef.current = s;
+              setCohostStream(s);
               setCohostVisible(true);
-              getElWithRetry("vibe-host-cohost", (container) => {
-                let v = container.querySelector("video") as HTMLVideoElement | null;
-                if (!v) { v = document.createElement("video"); v.autoplay = true; v.playsInline = true; v.style.cssText = "width:100%;height:100%;object-fit:cover;"; container.appendChild(v); }
-                v.srcObject = s;
-                v.play().catch(() => {});
-              });
               distributeCohost(s, ws);
             };
             pc.onicecandidate = (e) => {
@@ -999,8 +986,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             cohostViewerPcsRef.current.forEach(pc => pc.close());
             cohostViewerPcsRef.current.clear();
             setCohostVisible(false);
-            const ch = document.getElementById("vibe-host-cohost");
-            if (ch) ch.innerHTML = "";
+            setCohostStream(null);
           }
 
           if (msg.type === "cohost-answer") {
@@ -1032,7 +1018,15 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
       <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
-          <View nativeID="vibe-host-video" style={StyleSheet.absoluteFill} />
+          <View style={StyleSheet.absoluteFill}>
+            <WebVideoEl
+              stream={localStream}
+              muted={true}
+              mirrored={true}
+              videoRef={hostVideoRef}
+              filter={CAM_FILTERS.find(f => f.id === activeFilter)?.css || ""}
+            />
+          </View>
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
@@ -1156,7 +1150,9 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
         </View>
 
         {cohostVisible && Platform.OS === "web" && (
-          <View nativeID="vibe-host-cohost" style={styles.cohostPip} />
+          <View style={[styles.cohostPip, { overflow: "hidden" }]}>
+            <WebVideoEl stream={cohostStream} muted={false} />
+          </View>
         )}
 
         {broadcastError ? (
