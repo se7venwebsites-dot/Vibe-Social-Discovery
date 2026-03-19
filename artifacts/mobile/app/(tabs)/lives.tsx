@@ -708,7 +708,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
-      <View style={styles.liveContainer}>
+      <View style={[styles.liveContainer, StyleSheet.absoluteFill]}>
         {Platform.OS === "web" ? (
           <View style={StyleSheet.absoluteFill}>
             {remoteStream ? (
@@ -1216,7 +1216,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
-      <View style={styles.liveContainer}>
+      <View style={[styles.liveContainer, StyleSheet.absoluteFill]}>
         {Platform.OS === "web" ? (
           <View style={StyleSheet.absoluteFill}>
             <WebVideoEl
