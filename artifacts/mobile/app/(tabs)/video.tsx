@@ -20,9 +20,21 @@ const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
   : `ws://localhost:8080/api/ws`;
 
-const PEER_CONFIG = process.env.EXPO_PUBLIC_DOMAIN
-  ? { host: process.env.EXPO_PUBLIC_DOMAIN, port: 443, path: "/api/peerjs", secure: true }
-  : { host: "localhost", port: 8080, path: "/api/peerjs", secure: false };
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+];
+
+const PEER_CONFIG = {
+  host: "0.peerjs.com",
+  port: 443,
+  secure: true,
+  path: "/",
+  config: { iceServers: ICE_SERVERS },
+};
 
 const CITIES_OPTIONS = ["all", "Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
 
