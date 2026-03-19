@@ -117,6 +117,7 @@ const PEER_CONFIG = {
   port: 443,
   secure: true,
   path: "/",
+  config: { iceServers: ICE_SERVERS },
 };
 
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
@@ -286,7 +287,18 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       container.appendChild(v);
     }
     v.srcObject = stream;
-    v.play().catch(() => {});
+    if (mirrored) {
+      v.muted = true;
+      v.play().catch(() => {});
+    } else {
+      v.muted = true;
+      v.play().then(() => {
+        v!.muted = false;
+      }).catch(() => {
+        v!.muted = true;
+        v!.play().catch(() => {});
+      });
+    }
   };
 
   const cleanup = useCallback(() => {
