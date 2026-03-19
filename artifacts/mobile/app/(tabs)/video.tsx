@@ -119,23 +119,32 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
 
     const video = document.createElement("video");
     video.autoplay = true;
+    video.muted = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
-    video.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;background:#000;";
+    video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:#000;";
     if (mirrored) video.style.transform = "scaleX(-1)";
     if (filter) video.style.filter = filter;
+    container.style.position = "relative";
     container.appendChild(video);
 
     video.srcObject = stream;
-    video.muted = true;
-    video.play().then(() => {
+    
+    const playWithRetry = () => {
+      video.play().then(() => {
+        if (!muted) video.muted = false;
+        setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
+      }).catch(() => {
+        setTimeout(playWithRetry, 100);
+      });
+    };
+    
+    video.onplay = () => {
       if (!muted) video.muted = false;
-      setDbg(prev => prev + " PLAYING w=" + video.videoWidth + " h=" + video.videoHeight);
-    }).catch((e) => {
-      setDbg(prev => prev + " PLAY_ERR:" + e.message);
-      video.muted = true;
-      video.play().catch(() => {});
-    });
+      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
+    };
+    
+    playWithRetry();
 
     return () => {
       video.srcObject = null;

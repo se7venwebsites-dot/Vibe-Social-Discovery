@@ -167,6 +167,7 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
 
     const video = document.createElement("video");
     video.autoplay = true;
+    video.muted = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
     video.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;object-fit:cover;display:block;background:#000;";
@@ -178,15 +179,22 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
     if (externalRef) externalRef.current = video;
 
     video.srcObject = stream;
-    video.muted = true;
-    video.play().then(() => {
+    
+    const playWithRetry = () => {
+      video.play().then(() => {
+        if (!muted) video.muted = false;
+        setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
+      }).catch(() => {
+        setTimeout(playWithRetry, 100);
+      });
+    };
+    
+    video.onplay = () => {
       if (!muted) video.muted = false;
-      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight} el=${video.offsetWidth}x${video.offsetHeight}`);
-    }).catch((e) => {
-      setDbg(prev => prev + " ERR:" + e.message);
-      video.muted = true;
-      video.play().catch(() => {});
-    });
+      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
+    };
+    
+    playWithRetry();
 
     return () => {
       if (externalRef) externalRef.current = null;
