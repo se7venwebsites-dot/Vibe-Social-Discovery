@@ -180,18 +180,29 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", vide
 
     video.srcObject = stream;
     
+    video.onloadedmetadata = () => {
+      setDbg(prev => prev + ` META=${video.videoWidth}x${video.videoHeight}`);
+    };
+    video.onresize = () => {
+      setDbg(prev => prev + ` RESIZE=${video.videoWidth}x${video.videoHeight}`);
+    };
+    
+    const checkDimensions = () => {
+      if (video.videoWidth > 0) {
+        setDbg(prev => prev + ` FRAMES=${video.videoWidth}x${video.videoHeight}`);
+      } else {
+        setTimeout(checkDimensions, 500);
+      }
+    };
+    
     const playWithRetry = () => {
       video.play().then(() => {
         if (!muted) video.muted = false;
         setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
+        checkDimensions();
       }).catch(() => {
         setTimeout(playWithRetry, 100);
       });
-    };
-    
-    video.onplay = () => {
-      if (!muted) video.muted = false;
-      setDbg(prev => prev + ` PLAYING vw=${video.videoWidth}x${video.videoHeight}`);
     };
     
     playWithRetry();
