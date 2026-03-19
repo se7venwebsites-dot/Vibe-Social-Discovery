@@ -150,6 +150,21 @@ function WebVideoEl({ stream, muted = false, mirrored = false, filter = "", elId
 
     container.appendChild(video);
 
+    // If the container is still 0x0 (common when RN-web layout hasn't sized it yet), force it to fill viewport.
+    const rect = container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      console.warn("WebVideoEl: container has 0 size, forcing full viewport", elId, rect);
+      container.style.position = "fixed";
+      container.style.top = "0";
+      container.style.left = "0";
+      container.style.right = "0";
+      container.style.bottom = "0";
+      container.style.width = "100vw";
+      container.style.height = "100vh";
+      video.style.width = "100vw";
+      video.style.height = "100vh";
+    }
+
     video.srcObject = stream;
 
     const onLoadedMetadata = () => {
