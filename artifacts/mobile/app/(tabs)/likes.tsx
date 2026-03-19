@@ -11,7 +11,7 @@ import {
   Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -54,7 +54,7 @@ function LikeCard({
   return (
     <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
       <Pressable style={styles.likeCard} onPress={() => onPress(user)}>
-        <Image source={{ uri: user.photoUrl }} style={styles.likeImg} resizeMode="contain" />
+        <Image source={{ uri: user.photoUrl }} style={styles.likeImg} resizeMode="cover" />
         <View style={styles.likeOverlay} />
         <View style={styles.likeInfo}>
           <Text style={styles.likeName}>{user.name}, {user.age}</Text>
@@ -124,6 +124,7 @@ function LikePaywallModal({ visible, user, onClose, onActivate }: {
 export default function LikesScreen() {
   const insets = useSafeAreaInsets();
   const { currentUser, isPremium, activatePremium } = useUserContext();
+  const queryClient = useQueryClient();
   const [showPremium, setShowPremium] = React.useState(false);
   const [selectedUser, setSelectedUser] = React.useState<User | null>(null);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
@@ -229,6 +230,7 @@ export default function LikesScreen() {
           await activatePremium();
           setShowPremium(false);
           setSelectedUser(null);
+          queryClient.invalidateQueries({ queryKey: ["likes-received"] });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
@@ -241,6 +243,7 @@ export default function LikesScreen() {
           await activatePremium();
           setShowPremium(false);
           setSelectedUser(null);
+          queryClient.invalidateQueries({ queryKey: ["likes-received"] });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
