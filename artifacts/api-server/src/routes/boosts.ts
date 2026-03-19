@@ -8,7 +8,7 @@ const BOOST_TYPES = [
   { id: "spotlight", label: "Spotlight", duration: 5 * 60 * 1000, price: "4,99 zł" },
   { id: "attention", label: "Zwróć uwagę", duration: 0, price: "4,99 zł" },
   { id: "superlike", label: "Super Like", duration: 0, price: "2,99 zł" },
-  { id: "incognito", label: "Tryb Incognito", duration: 15 * 60 * 1000, price: "3,99 zł" },
+  { id: "rewind", label: "Drugie Szanse", duration: 0, price: "3,99 zł" },
   { id: "megaboost", label: "Mega Boost", duration: 30 * 60 * 1000, price: "9,99 zł" },
 ];
 

@@ -38,8 +38,8 @@ import { VOIVODESHIPS, VOIVODESHIP_NAMES } from "@/constants/poland";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const CARD_W = SCREEN_W - 24;
-const CARD_H = SCREEN_H * 0.62;
-const SWIPE_THRESHOLD = SCREEN_W * 0.32;
+const CARD_H = SCREEN_H * 0.58;
+const SWIPE_THRESHOLD = SCREEN_W * 0.18;
 
 interface User {
   id: number;
@@ -70,7 +70,7 @@ const BOOSTS: BoostType[] = [
   { id: "spotlight", label: "Spotlight", price: "4,99 zł", icon: "⚡", desc: "Przez 5 minut jesteś PIERWSZY w swipe — każdy Cię zobaczy!", color: "rgba(255,215,0,0.15)" },
   { id: "attention", label: "Zwróć uwagę", price: "4,99 zł", icon: "📢", desc: "Wyślij dużą notyfikację wybranej osobie — niech wie, że chcesz ją poznać!", color: "rgba(255,69,58,0.15)" },
   { id: "superlike", label: "Super Like", price: "2,99 zł", icon: "💜", desc: "Wyróżnij swój like — wyświetla się jako specjalny z animacją!", color: "rgba(138,43,226,0.15)" },
-  { id: "incognito", label: "Tryb Incognito", price: "3,99 zł", icon: "🕶️", desc: "Przez 15 min przeglądaj profile anonimowo — nikt nie wie, że go widziałeś!", color: "rgba(100,100,100,0.2)" },
+  { id: "rewind", label: "Drugie Szanse", price: "3,99 zł", icon: "🔄", desc: "Cofnij ostatnie 5 odrzuconych profili — daj im drugą szansę!", color: "rgba(0,200,150,0.15)" },
   { id: "megaboost", label: "Mega Boost", price: "9,99 zł", icon: "🚀", desc: "Przez 30 min jesteś na szczycie swipe + wyróżniony profil!", color: "rgba(204,255,0,0.12)" },
 ];
 
@@ -221,6 +221,7 @@ export default function DiscoverScreen() {
   const [swipeMsgUser, setSwipeMsgUser] = useState<User | null>(null);
   const [swipeMsgText, setSwipeMsgText] = useState("");
   const [sendingSwipeMsg, setSendingSwipeMsg] = useState(false);
+  const [rejectedStack, setRejectedStack] = useState<User[]>([]);
   const [filterGender, setFilterGender] = useState("all");
   const [filterVoivodeship, setFilterVoivodeship] = useState("all");
   const [filterCity, setFilterCity] = useState("all");
@@ -321,6 +322,10 @@ export default function DiscoverScreen() {
             handleSwipe("right");
           }, 1200);
         }
+        if (boost.id === "rewind" && rejectedStack.length > 0) {
+          setCardStack(prev => [...rejectedStack, ...prev]);
+          setRejectedStack([]);
+        }
         setShowBoosts(false);
         const successMsg = boost.id === "attention"
           ? `Powiadomienie wysłane do ${cardStack[0]?.name || "użytkownika"}!`
@@ -384,6 +389,8 @@ export default function DiscoverScreen() {
     if (dir === "right") {
       setSwipeMsgUser(topUser);
       setSwipeMsgText("");
+    } else {
+      setRejectedStack(prev => [topUser, ...prev].slice(0, 5));
     }
 
     setCardStack(prev => {
@@ -582,13 +589,13 @@ export default function DiscoverScreen() {
                   <Pressable
                     style={[styles.boostItem, { backgroundColor: boost.color }]}
                     onPress={() => handleBuyBoost(boost)}
-                    disabled={buyingBoost === boost.id}
+                    disabled={buyingBoost === boost.id || (boost.id === "rewind" && rejectedStack.length === 0)}
                   >
                     <View style={styles.boostItemLeft}>
                       <Text style={styles.boostItemIcon}>{boost.icon}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.boostItemLabel}>{boost.label}</Text>
-                        <Text style={styles.boostItemDesc}>{boost.desc}</Text>
+                        <Text style={styles.boostItemLabel}>{boost.label}{boost.id === "rewind" && rejectedStack.length > 0 ? ` (${rejectedStack.length})` : ""}</Text>
+                        <Text style={styles.boostItemDesc}>{boost.id === "rewind" && rejectedStack.length === 0 ? "Najpierw odrzuć kogoś w lewo!" : boost.desc}</Text>
                       </View>
                     </View>
                     <View style={styles.boostItemPriceWrap}>
@@ -742,7 +749,7 @@ const styles = StyleSheet.create({
   premiumBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
   premiumBadgeOutline: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: Colors.accent, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   premiumBadgeOutlineText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
-  cardArea: { flex: 1, alignItems: "center", justifyContent: "center" },
+  cardArea: { flex: 1, alignItems: "center", justifyContent: "flex-start", paddingTop: 4 },
   card: {
     position: "absolute",
     width: CARD_W,
