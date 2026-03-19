@@ -11,29 +11,46 @@ import {
   Modal,
   TextInput,
   Alert,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeIn, FadeInDown, FadeOut, useSharedValue, useAnimatedStyle, withTiming, withSpring, withSequence, withDelay, runOnJS } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  SlideInRight,
+  SlideOutRight,
+  SlideInDown,
+  SlideOutDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withSequence,
+  withDelay,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
+
+const { height: SCREEN_H } = Dimensions.get("window");
 
 const WS_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws`
   : `ws://localhost:8080/ws`;
 
 const GIFTS = [
-  { id: "heart", emoji: "❤️", label: "Serce", cost: 60, size: 34 },
-  { id: "rose", emoji: "🌹", label: "Róża", cost: 150, size: 34 },
-  { id: "fire", emoji: "🔥", label: "Ogień", cost: 300, size: 34 },
-  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 400, size: 36 },
-  { id: "diamond", emoji: "💎", label: "Diament", cost: 800, size: 38 },
-  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 1600, size: 38 },
-  { id: "crown", emoji: "👑", label: "Korona", cost: 3000, size: 40 },
-  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 6000, size: 42 },
+  { id: "heart", emoji: "❤️", label: "Serce", cost: 60 },
+  { id: "rose", emoji: "🌹", label: "Róża", cost: 150 },
+  { id: "fire", emoji: "🔥", label: "Ogień", cost: 300 },
+  { id: "star", emoji: "⭐", label: "Gwiazdka", cost: 400 },
+  { id: "diamond", emoji: "💎", label: "Diament", cost: 800 },
+  { id: "rainbow", emoji: "🌈", label: "Tęcza", cost: 1600 },
+  { id: "crown", emoji: "👑", label: "Korona", cost: 3000 },
+  { id: "rocket", emoji: "🚀", label: "Rakieta", cost: 6000 },
 ];
 
 const CAM_FILTERS = [
@@ -75,45 +92,75 @@ interface FloatingGift {
   x: number;
 }
 
-function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: (live: Live) => void }) {
+interface GiftToastItem {
+  id: string;
+  senderName: string;
+  emoji: string;
+  giftLabel: string;
+}
+
+interface FloatingHeart {
+  id: string;
+  xOff: number;
+}
+
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+];
+
+function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 4000);
+    return () => clearTimeout(t);
+  }, []);
   return (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
-      <Pressable style={styles.liveCard} onPress={() => onJoin(live)}>
-        <View style={styles.liveThumb}>
-          <Image source={{ uri: live.host.photoUrl }} style={styles.liveThumbImg} />
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>LIVE</Text>
-          </View>
-          <View style={styles.liveViewers}>
-            <Feather name="eye" size={11} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.liveViewersText}>{live.viewerCount}</Text>
-          </View>
-        </View>
-        <View style={styles.liveInfo}>
-          <Text style={styles.liveTitle} numberOfLines={1}>{live.title}</Text>
-          <View style={styles.liveHostRow}>
-            <Image source={{ uri: live.host.photoUrl }} style={styles.liveHostAvatar} />
-            <Text style={styles.liveHostName}>
-              {live.host.name}{live.host.username ? ` @${live.host.username}` : ""}
-            </Text>
-            {live.host.isVerified && (
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={8} color="#fff" />
-              </View>
-            )}
-          </View>
-          {live.host.city ? (
-            <View style={styles.locationRow}>
-              <Feather name="map-pin" size={10} color={Colors.textMuted} />
-              <Text style={styles.locationText}>{live.host.city}</Text>
-            </View>
-          ) : null}
-        </View>
-        <Pressable style={styles.joinBtn} onPress={() => onJoin(live)}>
-          <Text style={styles.joinBtnText}>Dołącz</Text>
-        </Pressable>
-      </Pressable>
+    <Animated.View
+      entering={SlideInRight.springify().damping(18)}
+      exiting={SlideOutRight.duration(350)}
+      style={styles.giftToast}
+    >
+      <Text style={styles.giftToastEmoji}>{toast.emoji}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.giftToastName} numberOfLines={1}>{toast.senderName}</Text>
+        <Text style={styles.giftToastLabel}>wysłał/a {toast.giftLabel}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+function FloatingHeartBubble({ xOff, onDone }: { xOff: number; onDone: () => void }) {
+  const translateY = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const opacity = useSharedValue(1);
+  const scale = useSharedValue(0.4);
+
+  useEffect(() => {
+    scale.value = withSequence(withSpring(1.3, { damping: 6, stiffness: 200 }), withTiming(1, { duration: 300 }));
+    translateY.value = withTiming(-240, { duration: 2200 });
+    translateX.value = withSequence(
+      withTiming(xOff, { duration: 550 }),
+      withTiming(-xOff * 0.6, { duration: 550 }),
+      withTiming(xOff * 0.9, { duration: 550 }),
+      withTiming(0, { duration: 550 }),
+    );
+    opacity.value = withSequence(
+      withTiming(1, { duration: 100 }),
+      withDelay(1400, withTiming(0, { duration: 700 })),
+    );
+    const t = setTimeout(onDone, 2200);
+    return () => clearTimeout(t);
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }, { translateX: translateX.value }, { scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.floatingHeart, style]} pointerEvents="none">
+      <Text style={styles.floatingHeartText}>❤️</Text>
     </Animated.View>
   );
 }
@@ -126,78 +173,67 @@ function FloatingGiftBubble({ emoji, x, onDone }: { emoji: string; x: number; on
 
   useEffect(() => {
     const drift = (Math.random() - 0.5) * 60;
-    opacity.value = withSequence(
-      withTiming(1, { duration: 250 }),
-      withDelay(1800, withTiming(0, { duration: 800 }))
-    );
+    opacity.value = withSequence(withTiming(1, { duration: 250 }), withDelay(1800, withTiming(0, { duration: 800 })));
     scale.value = withSequence(
       withSpring(1.5, { damping: 6, stiffness: 200 }),
       withTiming(1.1, { duration: 400 }),
-      withDelay(1400, withTiming(0.7, { duration: 800 }))
+      withDelay(1400, withTiming(0.7, { duration: 800 })),
     );
     translateY.value = withTiming(-320, { duration: 2800 });
     translateX.value = withSequence(
       withTiming(drift * 0.4, { duration: 700 }),
       withTiming(drift, { duration: 700 }),
       withTiming(drift * 0.7, { duration: 700 }),
-      withTiming(drift * 1.1, { duration: 600 })
+      withTiming(drift * 1.1, { duration: 600 }),
     );
     const t = setTimeout(onDone, 3000);
     return () => clearTimeout(t);
   }, []);
 
   const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { translateX: translateX.value },
-      { scale: scale.value },
-    ],
+    transform: [{ translateY: translateY.value }, { translateX: translateX.value }, { scale: scale.value }],
     opacity: opacity.value,
   }));
 
   return (
-    <Animated.View style={[styles.floatingGift, { left: `${x}%` as any }, style]}>
+    <Animated.View style={[styles.floatingGift, { left: `${x}%` as any }, style]} pointerEvents="none">
       <Text style={styles.floatingGiftText}>{emoji}</Text>
     </Animated.View>
   );
 }
 
-function GiftPanel({ onSend, coins, disabled }: { onSend: (gift: typeof GIFTS[0]) => void; coins: number; disabled: boolean }) {
+function GiftSheet({ onSend, coins, onClose }: { onSend: (gift: typeof GIFTS[0]) => void; coins: number; onClose: () => void }) {
   return (
-    <View style={styles.giftPanel}>
-      <View style={styles.giftCoinsRow}>
-        <Text style={styles.giftCoinsLabel}>💰 {coins} monet</Text>
-        <Text style={styles.giftCoinsHint}>Dotknij, żeby wysłać</Text>
-      </View>
-      <View style={styles.giftGrid}>
-        {GIFTS.map(gift => {
-          const canAfford = coins >= gift.cost;
-          return (
-            <Pressable
-              key={gift.id}
-              style={[styles.giftBtn, (!canAfford || disabled) && styles.giftBtnDisabled]}
-              onPress={() => onSend(gift)}
-              disabled={disabled || !canAfford}
-            >
-              <Text style={{ fontSize: gift.size }}>{gift.emoji}</Text>
-              <Text style={styles.giftLabel}>{gift.label}</Text>
-              <View style={styles.giftCostRow}>
-                <Text style={styles.giftCostIcon}>💰</Text>
-                <Text style={[styles.giftCost, !canAfford && { color: Colors.textMuted }]}>{gift.cost}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
+    <Pressable style={styles.giftSheetBackdrop} onPress={onClose}>
+      <Pressable style={styles.giftSheet} onPress={e => e.stopPropagation()}>
+        <View style={styles.giftSheetHandle} />
+        <View style={styles.giftSheetHeader}>
+          <Text style={styles.giftSheetTitle}>Wyślij prezent</Text>
+          <View style={styles.giftCoinsChip}>
+            <Text style={styles.giftCoinsChipText}>💰 {coins}</Text>
+          </View>
+        </View>
+        <View style={styles.giftGrid}>
+          {GIFTS.map(gift => {
+            const canAfford = coins >= gift.cost;
+            return (
+              <Pressable
+                key={gift.id}
+                style={[styles.giftBtn, !canAfford && styles.giftBtnDisabled]}
+                onPress={() => onSend(gift)}
+                disabled={!canAfford}
+              >
+                <Text style={{ fontSize: 32 }}>{gift.emoji}</Text>
+                <Text style={styles.giftLabel}>{gift.label}</Text>
+                <Text style={[styles.giftCost, !canAfford && { color: Colors.textMuted }]}>💰 {gift.cost}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Pressable>
+    </Pressable>
   );
 }
-
-const ICE_SERVERS = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-  { urls: "stun:stun2.l.google.com:19302" },
-];
 
 function LiveViewerModal({ live, visible, onClose, currentUser }: {
   live: Live | null;
@@ -219,16 +255,17 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const [stageInvite, setStageInvite] = useState<{ hostPeerId: string; hostName: string } | null>(null);
   const [addedFriend, setAddedFriend] = useState(false);
   const [showGifts, setShowGifts] = useState(false);
-  const [showChat, setShowChat] = useState(true);
   const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
   const [chatText, setChatText] = useState("");
   const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
+  const [giftToasts, setGiftToasts] = useState<GiftToastItem[]>([]);
+  const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [coins, setCoins] = useState(2000);
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
   const setVideoSrc = (container: HTMLElement | null, stream: MediaStream, mirrored = false) => {
-    if (!container) return;
+    if (!container || !stream) return;
     let v = container.querySelector("video") as HTMLVideoElement | null;
     if (!v) {
       v = document.createElement("video");
@@ -238,6 +275,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       container.appendChild(v);
     }
     v.srcObject = stream;
+    v.play().catch(() => {});
   };
 
   const cleanup = useCallback(() => {
@@ -250,6 +288,12 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     setCohostVisible(false);
     setOnStage(false);
     setStageInvite(null);
+    setShowGifts(false);
+    setChatMessages([]);
+    setFloatingGifts([]);
+    setGiftToasts([]);
+    setFloatingHearts([]);
+    setAddedFriend(false);
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: -1 }) }).catch(() => {});
     }
@@ -309,19 +353,36 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         if (!pc) {
           pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
           pcRef.current = pc;
+
           pc.ontrack = (e) => {
+            const stream = e.streams[0] || (() => {
+              const s = new MediaStream();
+              if (e.track) s.addTrack(e.track);
+              return s;
+            })();
             const container = document.getElementById("vibe-live-remote");
-            if (container) {
-              setVideoSrc(container, e.streams[0]);
+            if (container && stream.getTracks().length > 0) {
+              setVideoSrc(container, stream);
               setConnected(true);
             }
           };
+
           pc.onicecandidate = (e) => {
             if (e.candidate) {
               ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
             }
           };
+
+          pc.oniceconnectionstatechange = () => {
+            if (pc!.iceConnectionState === "failed") {
+              try { pc!.restartIce(); } catch {}
+            }
+            if (pc!.iceConnectionState === "connected" || pc!.iceConnectionState === "completed") {
+              setConnected(true);
+            }
+          };
         }
+
         await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
         for (const c of pendingIceRef.current) {
           try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
@@ -359,9 +420,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       if (msg.type === "cohost-offer") {
         const coPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         coPc.ontrack = (e) => {
+          const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
           const container = document.getElementById("vibe-live-cohost");
           if (container) {
-            setVideoSrc(container, e.streams[0]);
+            setVideoSrc(container, stream);
             setCohostVisible(true);
           }
         };
@@ -375,16 +437,16 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "live-chat") {
-        if ((msg.name as string) !== currentUser?.name) {
-          const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
-          setChatMessages(prev => [...prev.slice(-99), chatMsg]);
-        }
+        const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
+        setChatMessages(prev => [...prev.slice(-99), chatMsg]);
       }
 
       if (msg.type === "live-gift") {
         const fid = Math.random().toString(36).slice(2);
-        const fx = Math.random() * 55 + 5;
-        setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
+        setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: Math.random() * 55 + 5 }]);
+        const giftDef = GIFTS.find(g => g.emoji === msg.emoji);
+        const tid = Math.random().toString(36).slice(2);
+        setGiftToasts(prev => [...prev.slice(-3), { id: tid, senderName: msg.senderName as string, emoji: msg.emoji as string, giftLabel: giftDef?.label || "" }]);
       }
 
       if (msg.type === "live-error") {
@@ -410,9 +472,11 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     if (coins < gift.cost) return;
     setCoins(c => c - gift.cost);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    const id = Math.random().toString(36).slice(2);
-    const x = Math.random() * 55 + 5;
-    setFloatingGifts(prev => [...prev, { id, emoji: gift.emoji, x }]);
+    setShowGifts(false);
+    const fid = Math.random().toString(36).slice(2);
+    setFloatingGifts(prev => [...prev, { id: fid, emoji: gift.emoji, x: Math.random() * 55 + 5 }]);
+    const tid = Math.random().toString(36).slice(2);
+    setGiftToasts(prev => [...prev.slice(-3), { id: tid, senderName: currentUser?.name || "Ty", emoji: gift.emoji, giftLabel: gift.label }]);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "live-gift", senderName: currentUser?.name || "Widz", emoji: gift.emoji, cost: gift.cost }));
     }
@@ -422,8 +486,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     const trimmed = chatText.trim();
     if (!trimmed || !wsRef.current) return;
     const myName = currentUser?.name || "Widz";
-    const newMsg = { id: `local_${Date.now()}`, name: myName, text: trimmed };
-    setChatMessages(prev => [...prev.slice(-99), newMsg]);
+    setChatMessages(prev => [...prev.slice(-99), { id: `local_${Date.now()}`, name: myName, text: trimmed }]);
     setChatText("");
     if (wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "live-chat", name: myName, text: trimmed }));
@@ -444,40 +507,176 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     } catch {}
   };
 
+  const tapHeart = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newHearts: FloatingHeart[] = Array.from({ length: 5 }, () => ({
+      id: Math.random().toString(36).slice(2),
+      xOff: (Math.random() - 0.5) * 70,
+    }));
+    setFloatingHearts(prev => [...prev, ...newHearts]);
+  }, []);
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
-      <View style={styles.liveViewerContainer}>
+    <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
+      <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
-          <View style={styles.liveVideoFill}>
-            <View nativeID="vibe-live-remote" style={{ flex: 1 }} />
-            {cohostVisible && (
-              <View
-                nativeID="vibe-live-cohost"
-                style={styles.cohostPip}
-              />
-            )}
-            {onStage && (
-              <View
-                nativeID="vibe-live-mycam"
-                style={styles.myCamPip}
-              />
-            )}
-          </View>
+          <View nativeID="vibe-live-remote" style={StyleSheet.absoluteFill} />
         ) : (
-          <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
-            <Text style={styles.nativePlaceholderText}>Live dostępny w wersji web</Text>
+            <Text style={{ fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted, textAlign: "center", paddingHorizontal: 32 }}>
+              Live dostępny w wersji web
+            </Text>
           </View>
         )}
+
+        <View style={styles.topGradient} pointerEvents="none" />
+        <View style={styles.bottomGradient} pointerEvents="none" />
 
         {Platform.OS === "web" && !connected && (
-          <View style={styles.liveConnectingOverlay}>
-            <ActivityIndicator color={Colors.accent} size="large" />
-            <Text style={styles.liveConnectingText}>Łączę z live...</Text>
+          <View style={styles.connectingOverlay}>
+            {live?.host.photoUrl ? (
+              <Image source={{ uri: live.host.photoUrl }} style={styles.connectingAvatar} />
+            ) : null}
+            <ActivityIndicator color={Colors.accent} size="large" style={{ marginTop: 20 }} />
+            <Text style={styles.connectingText}>Łączę z live...</Text>
           </View>
         )}
 
-        {/* Stage invite dialog */}
+        {live && (
+          <View style={styles.topBar}>
+            <View style={styles.topBarLeft}>
+              <Image source={{ uri: live.host.photoUrl }} style={styles.hostAvatarTop} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hostNameTop} numberOfLines={1}>
+                  {live.host.name}{live.host.isVerified ? " ✓" : ""}
+                </Text>
+                {live.title ? <Text style={styles.liveTitleTop} numberOfLines={1}>{live.title}</Text> : null}
+              </View>
+              <View style={styles.liveBadgeTop}>
+                <View style={styles.liveDotTop} />
+                <Text style={styles.liveBadgeTopText}>LIVE</Text>
+              </View>
+              <View style={styles.viewerCountChip}>
+                <Feather name="eye" size={11} color="rgba(255,255,255,0.85)" />
+                <Text style={styles.viewerCountChipText}>{live.viewerCount}</Text>
+              </View>
+            </View>
+            <View style={styles.topBarRight}>
+              <Pressable
+                style={[styles.followTopBtn, addedFriend && styles.followTopBtnDone]}
+                onPress={handleAddFriend}
+                disabled={addedFriend}
+              >
+                {addedFriend
+                  ? <Feather name="check" size={13} color={Colors.black} />
+                  : <Text style={styles.followTopBtnText}>Dodaj</Text>}
+              </Pressable>
+              <Pressable style={styles.closeTopBtn} onPress={() => { cleanup(); onClose(); }}>
+                <Feather name="x" size={18} color="#fff" />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.rightActions}>
+          <Pressable style={styles.rightActionBtn} onPress={tapHeart}>
+            <Text style={styles.rightActionEmoji}>❤️</Text>
+            <Text style={styles.rightActionLabel}>Serce</Text>
+          </Pressable>
+          <Pressable style={styles.rightActionBtn} onPress={() => { setShowGifts(s => !s); Haptics.selectionAsync(); }}>
+            <Text style={styles.rightActionEmoji}>🎁</Text>
+            <Text style={styles.rightActionLabel}>Prezent</Text>
+          </Pressable>
+          <Pressable style={styles.rightActionBtn}>
+            <Feather name="share-2" size={26} color="#fff" />
+            <Text style={styles.rightActionLabel}>Udostępnij</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.commentsOverlay} pointerEvents="none">
+          <FlatList
+            ref={chatListRef}
+            data={chatMessages}
+            keyExtractor={m => m.id}
+            style={styles.commentsFlatList}
+            contentContainerStyle={{ gap: 5, paddingVertical: 4 }}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+            renderItem={({ item }) => (
+              <View style={styles.commentRow}>
+                <Text style={styles.commentSender}>{item.name} </Text>
+                <Text style={styles.commentText}>{item.text}</Text>
+              </View>
+            )}
+          />
+        </View>
+
+        <View style={styles.bottomBar}>
+          <View style={styles.commentInputWrap}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Dodaj komentarz..."
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              value={chatText}
+              onChangeText={setChatText}
+              onSubmitEditing={sendChat}
+              returnKeyType="send"
+              maxLength={200}
+            />
+            {chatText.trim() ? (
+              <Pressable onPress={sendChat} style={styles.commentSendBtn}>
+                <Feather name="send" size={15} color={Colors.accent} />
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable style={styles.bottomGiftBtn} onPress={() => { setShowGifts(s => !s); Haptics.selectionAsync(); }}>
+            <Text style={{ fontSize: 22 }}>🎁</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.heartsContainer} pointerEvents="none">
+          {floatingHearts.map(h => (
+            <FloatingHeartBubble
+              key={h.id}
+              xOff={h.xOff}
+              onDone={() => setFloatingHearts(prev => prev.filter(fh => fh.id !== h.id))}
+            />
+          ))}
+        </View>
+
+        {floatingGifts.map(g => (
+          <FloatingGiftBubble
+            key={g.id}
+            emoji={g.emoji}
+            x={g.x}
+            onDone={() => setFloatingGifts(prev => prev.filter(fg => fg.id !== g.id))}
+          />
+        ))}
+
+        <View style={styles.giftToastsContainer} pointerEvents="none">
+          {giftToasts.map(t => (
+            <GiftToastBubble
+              key={t.id}
+              toast={t}
+              onDone={() => setGiftToasts(prev => prev.filter(gt => gt.id !== t.id))}
+            />
+          ))}
+        </View>
+
+        {showGifts && (
+          <Animated.View entering={SlideInDown.springify().damping(16)} exiting={SlideOutDown.duration(280)} style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <GiftSheet onSend={handleSendGift} coins={coins} onClose={() => setShowGifts(false)} />
+          </Animated.View>
+        )}
+
+        {cohostVisible && Platform.OS === "web" && (
+          <View nativeID="vibe-live-cohost" style={styles.cohostPip} />
+        )}
+        {onStage && Platform.OS === "web" && (
+          <View nativeID="vibe-live-mycam" style={styles.myCamPip} />
+        )}
+
         {stageInvite && (
           <Animated.View entering={FadeInDown} style={styles.stageInviteBox}>
             <Text style={styles.stageInviteTitle}>🎤 Zaproszenie na scenę</Text>
@@ -490,106 +689,6 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
                 <Text style={styles.stageAcceptBtnText}>Dołącz</Text>
               </Pressable>
             </View>
-          </Animated.View>
-        )}
-
-        {/* Floating gifts */}
-        {floatingGifts.map(g => (
-          <FloatingGiftBubble
-            key={g.id}
-            emoji={g.emoji}
-            x={g.x}
-            onDone={() => setFloatingGifts(prev => prev.filter(fg => fg.id !== g.id))}
-          />
-        ))}
-
-        {live && (
-          <View style={styles.liveViewerHeader}>
-            <Pressable style={styles.liveViewerClose} onPress={() => { cleanup(); onClose(); }}>
-              <Feather name="x" size={22} color={Colors.textPrimary} />
-            </Pressable>
-            <View style={styles.liveViewerHostInfo}>
-              <Image source={{ uri: live.host.photoUrl }} style={styles.liveViewerHostAvatar} />
-              <View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Text style={styles.liveViewerHostName}>{live.host.name}</Text>
-                  {live.host.isVerified && <View style={styles.verifiedBadgeSm}><Feather name="check" size={8} color="#fff" /></View>}
-                </View>
-                <Text style={styles.liveViewerTitle}>{live.title}</Text>
-              </View>
-            </View>
-            <View style={styles.liveViewerCount}>
-              <View style={styles.liveDotSmall} />
-              <Text style={styles.liveViewerCountText}>{live.viewerCount}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Viewer action buttons */}
-        <View style={styles.liveViewerActions}>
-          <Pressable
-            style={[styles.addFriendBtn, addedFriend && styles.addFriendBtnDone]}
-            onPress={handleAddFriend}
-            disabled={addedFriend}
-          >
-            <Feather name={addedFriend ? "check" : "user-plus"} size={16} color={addedFriend ? Colors.black : Colors.textPrimary} />
-          </Pressable>
-
-          <Pressable
-            style={[styles.liveIconBtn, showChat && styles.liveIconBtnActive]}
-            onPress={() => { setShowChat(s => !s); Haptics.selectionAsync(); }}
-          >
-            <Feather name="message-circle" size={18} color={showChat ? Colors.black : Colors.textPrimary} />
-          </Pressable>
-
-          <Pressable
-            style={styles.giftToggleBtn}
-            onPress={() => { setShowGifts(s => !s); Haptics.selectionAsync(); }}
-          >
-            <Text style={{ fontSize: 18 }}>🎁</Text>
-          </Pressable>
-        </View>
-
-        {/* Chat panel */}
-        {showChat && (
-          <View style={styles.chatPanel}>
-            <FlatList
-              ref={chatListRef}
-              data={chatMessages}
-              keyExtractor={m => m.id}
-              style={styles.chatList}
-              contentContainerStyle={{ gap: 4, paddingVertical: 4 }}
-              showsVerticalScrollIndicator={false}
-              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
-              renderItem={({ item }) => (
-                <View style={styles.chatBubble}>
-                  <Text style={styles.chatSender}>{item.name}: </Text>
-                  <Text style={styles.chatText}>{item.text}</Text>
-                </View>
-              )}
-              ListEmptyComponent={<Text style={styles.chatEmpty}>Napisz coś...</Text>}
-            />
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Napisz komentarz..."
-                placeholderTextColor={Colors.textMuted}
-                value={chatText}
-                onChangeText={setChatText}
-                onSubmitEditing={sendChat}
-                returnKeyType="send"
-                maxLength={200}
-              />
-              <Pressable style={styles.chatSendBtn} onPress={sendChat} disabled={!chatText.trim()}>
-                <Feather name="send" size={14} color={Colors.black} />
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {showGifts && (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.giftPanelWrap}>
-            <GiftPanel onSend={handleSendGift} coins={coins} disabled={false} />
           </Animated.View>
         )}
       </View>
@@ -612,7 +711,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const [viewers, setViewers] = useState<{ peerId: string; name: string }[]>([]);
   const [cohostVisible, setCohostVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ id: string; name: string; text: string }[]>([]);
-  const [giftNotifs, setGiftNotifs] = useState<{ id: string; name: string; emoji: string }[]>([]);
+  const [giftToasts, setGiftToasts] = useState<GiftToastItem[]>([]);
   const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
   const [showChat, setShowChat] = useState(true);
   const [showViewers, setShowViewers] = useState(false);
@@ -672,6 +771,12 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     setBroadcasting(false);
     setViewerCount(0);
     setCohostVisible(false);
+    setChatMessages([]);
+    setGiftToasts([]);
+    setFloatingGifts([]);
+    setViewers([]);
+    setShowViewers(false);
+    setShowFilters(false);
     queryClient.invalidateQueries({ queryKey: ["lives"] });
   }, [live]);
 
@@ -710,18 +815,15 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           if (msg.type === "connected") { myPeerIdRef.current = msg.peerId; }
 
           if (msg.type === "live-chat") {
-            const chatMsg = { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string };
-            setChatMessages(prev => [...prev.slice(-99), chatMsg]);
+            setChatMessages(prev => [...prev.slice(-99), { id: Math.random().toString(36).slice(2), name: msg.name as string, text: msg.text as string }]);
           }
 
           if (msg.type === "live-gift") {
-            const notifId = Math.random().toString(36).slice(2);
-            const newNotif = { id: notifId, name: msg.senderName as string, emoji: msg.emoji as string };
-            setGiftNotifs(prev => [...prev.slice(-4), newNotif]);
-            setTimeout(() => setGiftNotifs(prev => prev.filter(n => n.id !== notifId)), 4000);
+            const giftDef = GIFTS.find(g => g.emoji === msg.emoji);
+            const tid = Math.random().toString(36).slice(2);
+            setGiftToasts(prev => [...prev.slice(-3), { id: tid, senderName: msg.senderName as string, emoji: msg.emoji as string, giftLabel: giftDef?.label || "" }]);
             const fid = Math.random().toString(36).slice(2);
-            const fx = Math.random() * 55 + 5;
-            setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: fx }]);
+            setFloatingGifts(prev => [...prev, { id: fid, emoji: msg.emoji as string, x: Math.random() * 55 + 5 }]);
           }
 
           if (msg.type === "viewer-joined") {
@@ -735,6 +837,11 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
             pc.onicecandidate = (e) => {
               if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: viewerPeerId }));
+            };
+            pc.oniceconnectionstatechange = () => {
+              if (pc.iceConnectionState === "failed") {
+                try { pc.restartIce(); } catch {}
+              }
             };
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
@@ -786,7 +893,8 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
             cohostPcRef.current = pc;
             pc.ontrack = (e) => {
-              cohostStreamRef.current = e.streams[0];
+              const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
+              cohostStreamRef.current = stream;
               const container = document.getElementById("vibe-host-cohost");
               if (container) {
                 let v = container.querySelector("video") as HTMLVideoElement | null;
@@ -796,10 +904,10 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
                   v.style.cssText = "width:100%;height:100%;object-fit:cover;";
                   container.appendChild(v);
                 }
-                v.srcObject = e.streams[0];
+                v.srcObject = stream;
                 setCohostVisible(true);
               }
-              distributeCohost(e.streams[0], ws);
+              distributeCohost(stream, ws);
             };
             pc.onicecandidate = (e) => {
               if (e.candidate) ws.send(JSON.stringify({ type: "stage-ice", candidate: e.candidate, targetPeerId: cohostPeerId }));
@@ -851,63 +959,113 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   }, [visible, live]);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={() => { cleanup(); onClose(); }}>
-      <View style={styles.liveViewerContainer}>
+    <Modal visible={visible} animationType="fade" onRequestClose={() => { cleanup(); onClose(); }}>
+      <View style={styles.liveContainer}>
         {Platform.OS === "web" ? (
-          <View style={styles.liveVideoFill}>
-            <View nativeID="vibe-host-video" style={{ flex: 1 }} />
-            {cohostVisible && (
-              <View nativeID="vibe-host-cohost" style={styles.cohostPip} />
-            )}
-          </View>
+          <View nativeID="vibe-host-video" style={StyleSheet.absoluteFill} />
         ) : (
-          <View style={[styles.liveVideoFill, styles.nativePlaceholder]}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111", alignItems: "center", justifyContent: "center", gap: 12 }]}>
             <Feather name="monitor" size={48} color={Colors.textMuted} />
-            <Text style={styles.nativePlaceholderText}>Streaming dostępny w wersji web</Text>
+            <Text style={{ fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textMuted }}>Live tylko w web</Text>
           </View>
         )}
 
-        {/* Header */}
-        <View style={styles.liveViewerHeader}>
-          <View style={styles.liveBroadcastBadge}>
-            {broadcasting && <View style={styles.liveDot} />}
-            <Text style={styles.liveBadgeText}>{broadcasting ? "LIVE" : "Łączę..."}</Text>
+        <View style={styles.topGradient} pointerEvents="none" />
+        <View style={styles.bottomGradient} pointerEvents="none" />
+
+        <View style={styles.topBar}>
+          <View style={styles.topBarLeft}>
+            <View style={styles.liveBadgeTop}>
+              {broadcasting && <View style={styles.liveDotTop} />}
+              <Text style={styles.liveBadgeTopText}>{broadcasting ? "LIVE" : "Łączę..."}</Text>
+            </View>
+            <View style={styles.viewerCountChip}>
+              <Feather name="eye" size={11} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.viewerCountChipText}>{viewerCount}</Text>
+            </View>
           </View>
-          <View style={{ flex: 1 }} />
-          <Pressable
-            style={[styles.viewersToggleBtn, showViewers && styles.liveIconBtnActive]}
-            onPress={() => { setShowViewers(s => !s); Haptics.selectionAsync(); }}
-          >
-            <Feather name="users" size={14} color={showViewers ? Colors.black : Colors.textPrimary} />
-            <Text style={[styles.viewerToggleBtnText, showViewers && { color: Colors.black }]}>{viewerCount}</Text>
-          </Pressable>
-          <View style={styles.liveViewerCount}>
-            <Feather name="eye" size={13} color={Colors.textPrimary} />
-            <Text style={styles.liveViewerCountText}>{viewerCount}</Text>
+          <View style={styles.topBarRight}>
+            <Pressable
+              style={[styles.topIconBtn, showViewers && styles.topIconBtnActive]}
+              onPress={() => { setShowViewers(s => !s); Haptics.selectionAsync(); }}
+            >
+              <Feather name="users" size={15} color={showViewers ? Colors.black : "#fff"} />
+            </Pressable>
+            {Platform.OS === "web" && (
+              <Pressable
+                style={[styles.topIconBtn, showFilters && styles.topIconBtnActive]}
+                onPress={() => { setShowFilters(s => !s); Haptics.selectionAsync(); }}
+              >
+                <Feather name="sliders" size={15} color={showFilters ? Colors.black : "#fff"} />
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.topIconBtn, { backgroundColor: Colors.danger }]}
+              onPress={() => { cleanup(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
+            >
+              <Feather name="x" size={16} color="#fff" />
+            </Pressable>
           </View>
         </View>
 
-        {/* Viewers panel with stage invite */}
-        {showViewers && viewers.length > 0 && (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.viewersList}>
-            <Text style={styles.viewersListTitle}>Widzowie</Text>
-            {viewers.map(v => (
-              <View key={v.peerId} style={styles.viewerRow}>
-                <View style={styles.viewerAvatarDot} />
-                <Text style={styles.viewerRowName} numberOfLines={1}>{v.name}</Text>
-                <Pressable
-                  style={styles.inviteStageBtn}
-                  onPress={() => inviteToStage(v.peerId)}
-                >
-                  <Feather name="mic" size={12} color={Colors.black} />
-                  <Text style={styles.inviteStageBtnText}>Dodaj</Text>
-                </Pressable>
-              </View>
-            ))}
+        {showViewers && (
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.viewersDropdown}>
+            <Text style={styles.viewersDropdownTitle}>Widzowie {viewers.length > 0 ? `(${viewers.length})` : ""}</Text>
+            {viewers.length === 0 ? (
+              <Text style={styles.viewersEmptyText}>Nikt jeszcze nie dołączył</Text>
+            ) : (
+              viewers.map(v => (
+                <View key={v.peerId} style={styles.viewerRow}>
+                  <View style={styles.viewerDot} />
+                  <Text style={styles.viewerRowName} numberOfLines={1}>{v.name}</Text>
+                  <Pressable style={styles.inviteBtn} onPress={() => inviteToStage(v.peerId)}>
+                    <Feather name="mic" size={11} color={Colors.black} />
+                    <Text style={styles.inviteBtnText}>Scena</Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
           </Animated.View>
         )}
 
-        {/* Floating gifts */}
+        {showFilters && Platform.OS === "web" && (
+          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filtersDropdown}>
+            <Text style={styles.filtersDropdownTitle}>Filtry kamery</Text>
+            <View style={styles.filtersGrid}>
+              {CAM_FILTERS.map(f => (
+                <Pressable
+                  key={f.id}
+                  style={[styles.filterChip, activeFilter === f.id && styles.filterChipActive]}
+                  onPress={() => { applyFilter(f.id); setShowFilters(false); Haptics.selectionAsync(); }}
+                >
+                  <Text style={[styles.filterChipText, activeFilter === f.id && styles.filterChipTextActive]}>{f.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </Animated.View>
+        )}
+
+        {showChat && (
+          <View style={styles.commentsOverlay} pointerEvents="none">
+            <FlatList
+              ref={chatListRef}
+              data={chatMessages}
+              keyExtractor={m => m.id}
+              style={styles.commentsFlatList}
+              contentContainerStyle={{ gap: 5, paddingVertical: 4 }}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+              renderItem={({ item }) => (
+                <View style={styles.commentRow}>
+                  <Text style={styles.commentSender}>{item.name} </Text>
+                  <Text style={styles.commentText}>{item.text}</Text>
+                </View>
+              )}
+              ListEmptyComponent={<Text style={styles.chatEmptyText}>Czat widzów pojawi się tutaj</Text>}
+            />
+          </View>
+        )}
+
         {floatingGifts.map(g => (
           <FloatingGiftBubble
             key={g.id}
@@ -917,77 +1075,33 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           />
         ))}
 
-        {/* Gift notifications */}
-        {giftNotifs.length > 0 && (
-          <View style={styles.giftNotifsPanel}>
-            {giftNotifs.map(n => (
-              <Animated.View key={n.id} entering={FadeIn} exiting={FadeOut} style={styles.giftNotifRow}>
-                <Text style={styles.giftNotifEmoji}>{n.emoji}</Text>
-                <Text style={styles.giftNotifText}>{n.name} wysłał/a {n.emoji}</Text>
-              </Animated.View>
-            ))}
-          </View>
-        )}
-
-        {/* Chat panel */}
-        {showChat && (
-          <View style={[styles.chatPanel, styles.chatPanelHost]}>
-            <FlatList
-              ref={chatListRef}
-              data={chatMessages}
-              keyExtractor={m => m.id}
-              style={styles.chatList}
-              contentContainerStyle={{ gap: 4, paddingVertical: 4 }}
-              showsVerticalScrollIndicator={false}
-              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
-              renderItem={({ item }) => (
-                <View style={styles.chatBubble}>
-                  <Text style={styles.chatSender}>{item.name}: </Text>
-                  <Text style={styles.chatText}>{item.text}</Text>
-                </View>
-              )}
-              ListEmptyComponent={<Text style={styles.chatEmpty}>Czat widzów pojawi się tutaj</Text>}
+        <View style={styles.giftToastsContainer} pointerEvents="none">
+          {giftToasts.map(t => (
+            <GiftToastBubble
+              key={t.id}
+              toast={t}
+              onDone={() => setGiftToasts(prev => prev.filter(gt => gt.id !== t.id))}
             />
-          </View>
+          ))}
+        </View>
+
+        {cohostVisible && Platform.OS === "web" && (
+          <View nativeID="vibe-host-cohost" style={styles.cohostPip} />
         )}
 
-        {/* Filter bar */}
-        {showFilters && Platform.OS === "web" && (
-          <Animated.View entering={FadeInDown} exiting={FadeOut} style={styles.filterBar}>
-            {CAM_FILTERS.map(f => (
-              <Pressable
-                key={f.id}
-                style={[styles.filterBtn, activeFilter === f.id && styles.filterBtnActive]}
-                onPress={() => { applyFilter(f.id); Haptics.selectionAsync(); }}
-              >
-                <Text style={[styles.filterBtnText, activeFilter === f.id && styles.filterBtnTextActive]}>{f.label}</Text>
-              </Pressable>
-            ))}
-          </Animated.View>
-        )}
-
-        {/* Host action buttons */}
-        <View style={styles.liveViewerActions}>
+        <View style={styles.hostBottomBar}>
           <Pressable
-            style={[styles.liveIconBtn, showChat && styles.liveIconBtnActive]}
+            style={[styles.hostBarBtn, showChat && styles.hostBarBtnActive]}
             onPress={() => { setShowChat(s => !s); Haptics.selectionAsync(); }}
           >
-            <Feather name="message-circle" size={18} color={showChat ? Colors.black : Colors.textPrimary} />
+            <Feather name="message-circle" size={17} color={showChat ? Colors.black : "#fff"} />
+            <Text style={[styles.hostBarBtnText, showChat && { color: Colors.black }]}>Czat</Text>
           </Pressable>
-          {Platform.OS === "web" && (
-            <Pressable
-              style={[styles.filterToggleBtn, showFilters && styles.filterToggleBtnActive]}
-              onPress={() => { setShowFilters(s => !s); Haptics.selectionAsync(); }}
-            >
-              <Feather name="sliders" size={16} color={showFilters ? Colors.black : Colors.textPrimary} />
-              <Text style={[styles.filterToggleBtnText, showFilters && { color: Colors.black }]}>Filtry</Text>
-            </Pressable>
-          )}
           <Pressable
-            style={[styles.endLiveBtn]}
+            style={styles.endLiveBtn}
             onPress={() => { cleanup(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
           >
-            <Feather name="x-circle" size={18} color="#fff" />
+            <View style={styles.endLiveDot} />
             <Text style={styles.endLiveBtnText}>Zakończ live</Text>
           </Pressable>
         </View>
@@ -1006,10 +1120,11 @@ function StartLiveModal({ visible, onClose, onStart }: { visible: boolean; onClo
             <Feather name="x" size={20} color={Colors.textSecondary} />
           </Pressable>
           <View style={styles.startLiveIconWrap}>
-            <Feather name="radio" size={28} color="#fff" />
+            <View style={styles.startLiveDot} />
+            <Feather name="radio" size={26} color="#fff" />
           </View>
           <Text style={styles.startLiveTitle}>Zacznij Live</Text>
-          <Text style={styles.startLiveSub}>Inni zobaczą Twoje wideo na żywo i mogą Cię dodać do znajomych.</Text>
+          <Text style={styles.startLiveSub}>Inni zobaczą Twoje wideo na żywo i mogą wysyłać Ci prezenty.</Text>
           <TextInput
             style={styles.startLiveInput}
             placeholder="Tytuł live'a..."
@@ -1020,15 +1135,56 @@ function StartLiveModal({ visible, onClose, onStart }: { visible: boolean; onClo
           />
           <Pressable
             style={({ pressed }) => [styles.startLiveBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => { if (title.trim()) { onStart(title.trim()); onClose(); } }}
+            onPress={() => { if (title.trim()) { onStart(title.trim()); onClose(); setTitle(""); } }}
             disabled={!title.trim()}
           >
-            <Feather name="radio" size={16} color="#fff" />
+            <View style={styles.startLiveDotBtn} />
             <Text style={styles.startLiveBtnText}>Idź na żywo</Text>
           </Pressable>
         </Animated.View>
       </View>
     </Modal>
+  );
+}
+
+function LiveCard({ live, index, onJoin }: { live: Live; index: number; onJoin: (live: Live) => void }) {
+  return (
+    <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
+      <Pressable style={styles.liveCard} onPress={() => onJoin(live)}>
+        <View style={styles.liveThumb}>
+          <Image source={{ uri: live.host.photoUrl }} style={styles.liveThumbImg} />
+          <View style={styles.liveBadgeCard}>
+            <View style={styles.liveDotCard} />
+            <Text style={styles.liveBadgeCardText}>LIVE</Text>
+          </View>
+          <View style={styles.liveViewersCard}>
+            <Feather name="eye" size={11} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.liveViewersCardText}>{live.viewerCount}</Text>
+          </View>
+        </View>
+        <View style={styles.liveInfo}>
+          <Text style={styles.liveTitle} numberOfLines={1}>{live.title}</Text>
+          <View style={styles.liveHostRow}>
+            <Image source={{ uri: live.host.photoUrl }} style={styles.liveHostAvatar} />
+            <Text style={styles.liveHostName}>
+              {live.host.name}{live.host.username ? ` @${live.host.username}` : ""}
+            </Text>
+            {live.host.isVerified && (
+              <View style={styles.verifiedBadge}><Feather name="check" size={8} color="#fff" /></View>
+            )}
+          </View>
+          {live.host.city ? (
+            <View style={styles.locationRow}>
+              <Feather name="map-pin" size={10} color={Colors.textMuted} />
+              <Text style={styles.locationText}>{live.host.city}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Pressable style={styles.joinBtn} onPress={() => onJoin(live)}>
+          <Text style={styles.joinBtnText}>Dołącz</Text>
+        </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -1077,15 +1233,15 @@ export default function LivesScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topInset }]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Na żywo</Text>
+    <View style={[styles.screen, { paddingTop: topInset }]}>
+      <View style={styles.screenHeader}>
+        <Text style={styles.screenTitle}>Na żywo</Text>
         <Pressable
-          style={styles.startBtn}
+          style={styles.goLiveBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowStartModal(true); }}
         >
-          <Feather name="radio" size={14} color="#fff" />
-          <Text style={styles.startBtnText}>Idź live</Text>
+          <View style={styles.goLiveDot} />
+          <Text style={styles.goLiveBtnText}>Idź live</Text>
         </Pressable>
       </View>
 
@@ -1095,11 +1251,13 @@ export default function LivesScreen() {
         </View>
       ) : lives.length === 0 ? (
         <View style={styles.center}>
-          <Feather name="radio" size={48} color={Colors.textMuted} />
+          <View style={styles.emptyIconWrap}>
+            <Feather name="radio" size={30} color="#fff" />
+          </View>
           <Text style={styles.emptyTitle}>Brak live'ów</Text>
           <Text style={styles.emptyText}>Bądź pierwszy! Zacznij swój live.</Text>
           <Pressable style={styles.startEmptyBtn} onPress={() => setShowStartModal(true)}>
-            <Feather name="radio" size={16} color="#fff" />
+            <View style={styles.goLiveDot} />
             <Text style={styles.startEmptyBtnText}>Zacznij live</Text>
           </Pressable>
         </View>
@@ -1121,13 +1279,11 @@ export default function LivesScreen() {
         onClose={() => setViewerVisible(false)}
         currentUser={currentUser}
       />
-
       <HostBroadcastModal
         live={activeLive}
         visible={broadcastVisible}
         onClose={() => { setBroadcastVisible(false); setActiveLive(null); }}
       />
-
       <StartLiveModal
         visible={showStartModal}
         onClose={() => setShowStartModal(false)}
@@ -1138,21 +1294,28 @@ export default function LivesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.black },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
-  title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
-  startBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  startBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff" },
+  screen: { flex: 1, backgroundColor: Colors.black },
+  screenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 16, paddingTop: 8 },
+  screenTitle: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
+  goLiveBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 24 },
+  goLiveDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#fff" },
+  goLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff" },
   list: { paddingHorizontal: 16, gap: 12, paddingTop: 4 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
+  emptyIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.danger, alignItems: "center", justifyContent: "center" },
+  emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
+  emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
+  startEmptyBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, marginTop: 4 },
+  startEmptyBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
+
   liveCard: { backgroundColor: Colors.cardBg, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, overflow: "hidden", flexDirection: "row", alignItems: "center" },
   liveThumb: { width: 100, height: 90, position: "relative" },
   liveThumbImg: { width: "100%", height: "100%", resizeMode: "cover" },
-  liveBadge: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.danger, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
-  liveBroadcastBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: Colors.danger, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#fff" },
-  liveBadgeText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: "#fff", letterSpacing: 1 },
-  liveViewers: { position: "absolute", bottom: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  liveViewersText: { fontFamily: "Montserrat_600SemiBold", fontSize: 10, color: "#fff" },
+  liveBadgeCard: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.danger, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
+  liveDotCard: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#fff" },
+  liveBadgeCardText: { fontFamily: "Montserrat_700Bold", fontSize: 9, color: "#fff", letterSpacing: 1 },
+  liveViewersCard: { position: "absolute", bottom: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  liveViewersCardText: { fontFamily: "Montserrat_600SemiBold", fontSize: 10, color: "#fff" },
   liveInfo: { flex: 1, paddingHorizontal: 12, paddingVertical: 12, gap: 6 },
   liveTitle: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.textPrimary },
   liveHostRow: { flexDirection: "row", alignItems: "center", gap: 6 },
@@ -1160,104 +1323,126 @@ const styles = StyleSheet.create({
   liveHostName: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textSecondary },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   locationText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
-  joinBtn: { backgroundColor: Colors.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginRight: 12 },
+  joinBtn: { backgroundColor: Colors.accent, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, marginRight: 12 },
   joinBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.black },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  emptyTitle: { fontFamily: "Montserrat_700Bold", fontSize: 20, color: Colors.textPrimary },
-  emptyText: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 40 },
-  startEmptyBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, marginTop: 8 },
-  startEmptyBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
-  liveViewerContainer: { flex: 1, backgroundColor: "#000" },
-  liveVideoFill: { flex: 1, backgroundColor: "#0a0a0a" },
-  nativePlaceholder: { alignItems: "center", justifyContent: "center", gap: 12 },
-  nativePlaceholderText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 32 },
-  liveConnectingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.8)", gap: 16 },
-  liveConnectingText: { fontFamily: "Montserrat_600SemiBold", fontSize: 16, color: Colors.textPrimary },
-  liveViewerHeader: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, backgroundColor: "rgba(0,0,0,0.5)", gap: 12 },
-  liveViewerClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  liveViewerHostInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
-  liveViewerHostAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: Colors.danger },
-  liveViewerHostName: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.textPrimary },
-  liveViewerTitle: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textSecondary },
-  liveViewerCount: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  liveDotSmall: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.danger },
-  liveViewerCountText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.textPrimary },
-  liveViewerActions: { position: "absolute", bottom: 40, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 20 },
-  addFriendBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  addFriendBtnDone: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  addFriendBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textPrimary },
-  giftToggleBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  giftPanelWrap: { position: "absolute", bottom: 100, left: 16, right: 16 },
-  giftPanel: { backgroundColor: "rgba(20,20,20,0.95)", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: Colors.border, gap: 10 },
-  giftCoinsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  giftCoinsLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.accent },
-  giftCoinsHint: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted },
-  giftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
-  giftBtn: { alignItems: "center", gap: 3, padding: 10, backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, width: 78 },
-  giftBtnDisabled: { opacity: 0.35 },
-  giftLabel: { fontFamily: "Montserrat_500Medium", fontSize: 10, color: Colors.textSecondary },
-  giftCostRow: { flexDirection: "row", alignItems: "center", gap: 2 },
-  giftCostIcon: { fontSize: 10 },
-  giftCost: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
+  verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
+
+  liveContainer: { flex: 1, backgroundColor: "#000" },
+  topGradient: { position: "absolute", top: 0, left: 0, right: 0, height: 110, backgroundColor: "rgba(0,0,0,0.55)", zIndex: 1 },
+  bottomGradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1 },
+
+  connectingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.82)", alignItems: "center", justifyContent: "center", zIndex: 10 },
+  connectingAvatar: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: Colors.danger },
+  connectingText: { fontFamily: "Montserrat_600SemiBold", fontSize: 16, color: "#fff", marginTop: 14 },
+
+  topBar: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10, zIndex: 10 },
+  topBarLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  topBarRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  hostAvatarTop: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: Colors.danger },
+  hostNameTop: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: "#fff", maxWidth: 120 },
+  liveTitleTop: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: "rgba(255,255,255,0.7)", maxWidth: 140 },
+  liveBadgeTop: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: Colors.danger, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  liveDotTop: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#fff" },
+  liveBadgeTopText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: "#fff", letterSpacing: 1.5 },
+  viewerCountChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  viewerCountChipText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: "#fff" },
+  followTopBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.2)", borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
+  followTopBtnDone: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  followTopBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 12, color: "#fff" },
+  closeTopBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
+  topIconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
+  topIconBtnActive: { backgroundColor: Colors.accent },
+
+  rightActions: { position: "absolute", right: 12, bottom: 120, alignItems: "center", gap: 22, zIndex: 10 },
+  rightActionBtn: { alignItems: "center", gap: 4 },
+  rightActionEmoji: { fontSize: 30 },
+  rightActionLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 10, color: "#fff", textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+
+  commentsOverlay: { position: "absolute", bottom: 68, left: 12, width: "60%", maxHeight: 200, zIndex: 10 },
+  commentsFlatList: { maxHeight: 200 },
+  commentRow: { flexDirection: "row", flexWrap: "wrap", marginBottom: 3, backgroundColor: "rgba(0,0,0,0.25)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  commentSender: { fontFamily: "Montserrat_700Bold", fontSize: 12, color: Colors.accent },
+  commentText: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: "#fff", flexShrink: 1 },
+  chatEmptyText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: "rgba(255,255,255,0.4)", padding: 4 },
+
+  bottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 18, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 10 },
+  commentInputWrap: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 24, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
+  commentInput: { flex: 1, fontFamily: "Montserrat_400Regular", fontSize: 14, color: "#fff", paddingVertical: 0 },
+  commentSendBtn: { marginLeft: 6 },
+  bottomGiftBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(255,255,255,0.14)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
+
+  heartsContainer: { position: "absolute", right: 20, bottom: 100, width: 60, height: 280, zIndex: 20 },
+  floatingHeart: { position: "absolute", bottom: 0, right: 0 },
+  floatingHeartText: { fontSize: 30 },
+
   floatingGift: { position: "absolute", bottom: 160, zIndex: 200 },
   floatingGiftText: { fontSize: 56 },
-  filterBar: { position: "absolute", bottom: 100, left: 16, right: 16, flexDirection: "row", gap: 8, backgroundColor: "rgba(0,0,0,0.8)", borderRadius: 14, padding: 10, borderWidth: 1, borderColor: Colors.border, flexWrap: "wrap" },
-  filterBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
-  filterBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  filterBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textSecondary },
-  filterBtnTextActive: { color: Colors.black },
-  filterToggleBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  filterToggleBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  filterToggleBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.textPrimary },
-  endLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30 },
-  endLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
-  startLiveOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
-  startLiveBox: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, paddingBottom: 44, borderTopWidth: 1, borderColor: Colors.border, gap: 14, alignItems: "center" },
-  startLiveClose: { position: "absolute", top: 16, right: 20, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  startLiveIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.danger, alignItems: "center", justifyContent: "center" },
-  startLiveTitle: { fontFamily: "Montserrat_700Bold", fontSize: 24, color: Colors.textPrimary },
-  startLiveSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
-  startLiveInput: { width: "100%", backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 16, paddingVertical: 13, fontFamily: "Montserrat_500Medium", fontSize: 15, color: Colors.textPrimary },
-  startLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 28, paddingVertical: 15, borderRadius: 14, width: "100%", justifyContent: "center" },
-  startLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: "#fff" },
-  verifiedBadge: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
-  verifiedBadgeSm: { width: 14, height: 14, borderRadius: 7, backgroundColor: "#1d9bf0", alignItems: "center", justifyContent: "center" },
-  liveIconBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  liveIconBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  chatPanel: { position: "absolute", bottom: 110, left: 12, width: 220, maxHeight: 200, backgroundColor: "rgba(0,0,0,0.75)", borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
-  chatPanelHost: { bottom: 120 },
-  chatList: { maxHeight: 140, paddingHorizontal: 8, paddingTop: 4 },
-  chatBubble: { flexDirection: "row", flexWrap: "wrap", marginBottom: 2 },
-  chatSender: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
-  chatText: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textPrimary, flexShrink: 1 },
-  chatEmpty: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: Colors.textMuted, padding: 8 },
-  chatInputRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", paddingHorizontal: 8, paddingVertical: 6, gap: 6 },
-  chatInput: { flex: 1, fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textPrimary, paddingVertical: 4 },
-  chatSendBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent, alignItems: "center", justifyContent: "center" },
-  viewerPillRow: { flexDirection: "row", gap: 4, marginRight: 8 },
-  viewerPill: { backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  viewerPillText: { fontFamily: "Montserrat_600SemiBold", fontSize: 10, color: Colors.textPrimary },
-  giftNotifsPanel: { position: "absolute", right: 12, top: 80, gap: 6 },
-  giftNotifRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.75)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(204,255,0,0.3)" },
-  giftNotifEmoji: { fontSize: 18 },
-  giftNotifText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textPrimary },
-  cohostPip: { position: "absolute", bottom: 120, right: 16, width: 130, height: 180, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: Colors.accent, backgroundColor: "#111" },
-  myCamPip: { position: "absolute", bottom: 120, left: 16, width: 110, height: 150, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#111" },
-  stageInviteBox: { position: "absolute", bottom: 120, left: 20, right: 20, backgroundColor: "rgba(20,20,20,0.97)", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.accent, gap: 10, zIndex: 300 },
-  stageInviteTitle: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.textPrimary, textAlign: "center" },
-  stageInviteText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+
+  giftToastsContainer: { position: "absolute", left: 12, bottom: 80, gap: 8, zIndex: 50 },
+  giftToast: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(20,20,20,0.9)", borderRadius: 30, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", maxWidth: 230 },
+  giftToastEmoji: { fontSize: 28 },
+  giftToastName: { fontFamily: "Montserrat_700Bold", fontSize: 12, color: "#fff" },
+  giftToastLabel: { fontFamily: "Montserrat_400Regular", fontSize: 11, color: "rgba(255,255,255,0.65)" },
+
+  giftSheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  giftSheet: { backgroundColor: "#111", borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 12, paddingBottom: 32, paddingHorizontal: 16 },
+  giftSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.25)", alignSelf: "center", marginBottom: 14 },
+  giftSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  giftSheetTitle: { fontFamily: "Montserrat_700Bold", fontSize: 17, color: "#fff" },
+  giftCoinsChip: { backgroundColor: "rgba(255,255,255,0.1)", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14 },
+  giftCoinsChipText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.accent },
+  giftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  giftBtn: { alignItems: "center", gap: 4, padding: 12, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", width: 82 },
+  giftBtnDisabled: { opacity: 0.35 },
+  giftLabel: { fontFamily: "Montserrat_500Medium", fontSize: 10, color: "rgba(255,255,255,0.7)" },
+  giftCost: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.accent },
+
+  cohostPip: { position: "absolute", top: 100, right: 12, width: 120, height: 180, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: Colors.accent, backgroundColor: "#111", zIndex: 15 },
+  myCamPip: { position: "absolute", top: 100, left: 12, width: 100, height: 160, borderRadius: 14, overflow: "hidden", borderWidth: 2, borderColor: "#fff", backgroundColor: "#111", zIndex: 15 },
+
+  stageInviteBox: { position: "absolute", bottom: 100, left: 20, right: 20, backgroundColor: "rgba(18,18,18,0.97)", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.accent, gap: 10, zIndex: 300 },
+  stageInviteTitle: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: "#fff", textAlign: "center" },
+  stageInviteText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: "rgba(255,255,255,0.7)", textAlign: "center" },
   stageInviteBtns: { flexDirection: "row", gap: 10, justifyContent: "center" },
   stageDeclineBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center" },
   stageDeclineBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textSecondary },
   stageAcceptBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.accent, alignItems: "center" },
   stageAcceptBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: Colors.black },
-  viewersToggleBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", marginRight: 8 },
-  viewerToggleBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: Colors.textPrimary },
-  viewersList: { position: "absolute", top: 60, right: 16, width: 220, backgroundColor: "rgba(15,15,15,0.96)", borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 12, gap: 8, zIndex: 200 },
-  viewersListTitle: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: Colors.textPrimary, marginBottom: 4 },
+
+  viewersDropdown: { position: "absolute", top: 62, right: 14, width: 220, backgroundColor: "rgba(12,12,12,0.97)", borderRadius: 16, padding: 14, gap: 8, zIndex: 50, borderWidth: 1, borderColor: Colors.border },
+  viewersDropdownTitle: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff", marginBottom: 2 },
+  viewersEmptyText: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
   viewerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  viewerAvatarDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accent },
-  viewerRowName: { flex: 1, fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textPrimary },
-  inviteStageBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.accent, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-  inviteStageBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
+  viewerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accent },
+  viewerRowName: { flex: 1, fontFamily: "Montserrat_500Medium", fontSize: 12, color: "#fff" },
+  inviteBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.accent, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  inviteBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 11, color: Colors.black },
+
+  filtersDropdown: { position: "absolute", top: 62, right: 58, width: 210, backgroundColor: "rgba(12,12,12,0.97)", borderRadius: 16, padding: 14, gap: 8, zIndex: 50, borderWidth: 1, borderColor: Colors.border },
+  filtersDropdownTitle: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff", marginBottom: 2 },
+  filtersGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  filterChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  filterChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  filterChipText: { fontFamily: "Montserrat_500Medium", fontSize: 11, color: Colors.textSecondary },
+  filterChipTextActive: { color: Colors.black },
+
+  hostBottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, paddingBottom: 24, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 10 },
+  hostBarBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
+  hostBarBtnActive: { backgroundColor: Colors.accent },
+  hostBarBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 13, color: "#fff" },
+  endLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 24 },
+  endLiveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
+  endLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: "#fff" },
+
+  startLiveOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
+  startLiveBox: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, paddingBottom: 48, borderTopWidth: 1, borderColor: Colors.border, gap: 14, alignItems: "center" },
+  startLiveClose: { position: "absolute", top: 16, right: 20, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  startLiveIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.danger, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
+  startLiveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#fff" },
+  startLiveDotBtn: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
+  startLiveTitle: { fontFamily: "Montserrat_700Bold", fontSize: 24, color: Colors.textPrimary },
+  startLiveSub: { fontFamily: "Montserrat_400Regular", fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  startLiveInput: { width: "100%", backgroundColor: Colors.surface, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 16, paddingVertical: 13, fontFamily: "Montserrat_500Medium", fontSize: 15, color: Colors.textPrimary },
+  startLiveBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: Colors.danger, paddingHorizontal: 28, paddingVertical: 15, borderRadius: 14, width: "100%", justifyContent: "center" },
+  startLiveBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: "#fff" },
 });

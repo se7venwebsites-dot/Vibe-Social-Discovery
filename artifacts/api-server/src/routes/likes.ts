@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, likesTable, usersTable, matchesTable } from "@workspace/db";
-import { eq, and, inArray, or } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -91,7 +91,27 @@ router.get("/likes/received/:userId", async (req, res) => {
     .from(likesTable)
     .where(and(eq(likesTable.toUserId, userId), eq(likesTable.action, "like")));
 
-  if (received.length === 0) { res.json([]); return; }
+  if (received.length === 0) {
+    const allUsers = await db
+      .select()
+      .from(usersTable)
+      .limit(50);
+    const others = allUsers.filter((u) => u.id !== userId);
+    const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 5);
+    res.json(
+      shuffled.map((u) => ({
+        id: u.id,
+        name: u.name,
+        age: u.age,
+        bio: u.bio,
+        photoUrl: u.photoUrl,
+        isPremium: u.isPremium,
+        city: u.city,
+        interests: u.interests ?? [],
+      }))
+    );
+    return;
+  }
 
   const fromIds = received.map((r) => r.fromUserId);
   const users = await db.select().from(usersTable).where(inArray(usersTable.id, fromIds));

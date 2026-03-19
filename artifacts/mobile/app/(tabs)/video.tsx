@@ -110,8 +110,13 @@ export default function VideoScreen() {
     }
 
     pc.ontrack = (event) => {
+      const stream = event.streams[0] || (() => {
+        const s = new MediaStream();
+        if (event.track) s.addTrack(event.track);
+        return s;
+      })();
       const remoteContainer = document.getElementById("vibe-remote-video");
-      if (remoteContainer) {
+      if (remoteContainer && stream.getTracks().length > 0) {
         let video = remoteContainer.querySelector("video") as HTMLVideoElement;
         if (!video) {
           video = document.createElement("video");
@@ -120,13 +125,20 @@ export default function VideoScreen() {
           video.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:0;";
           remoteContainer.appendChild(video);
         }
-        video.srcObject = event.streams[0];
+        video.srcObject = stream;
+        video.play().catch(() => {});
       }
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "ice-candidate", candidate: event.candidate }));
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "failed") {
+        try { pc.restartIce(); } catch {}
       }
     };
 
