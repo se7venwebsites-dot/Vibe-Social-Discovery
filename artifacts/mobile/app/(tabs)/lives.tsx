@@ -120,6 +120,13 @@ const PEER_CONFIG = {
   config: { iceServers: ICE_SERVERS },
 };
 
+function getElWithRetry(id: string, cb: (el: HTMLElement) => void, retries = 15, delay = 80) {
+  if (typeof document === "undefined") return;
+  const el = document.getElementById(id);
+  if (el) { cb(el); return; }
+  if (retries > 0) setTimeout(() => getElWithRetry(id, cb, retries - 1, delay), delay);
+}
+
 function GiftToastBubble({ toast, onDone }: { toast: GiftToastItem; onDone: () => void }) {
   useEffect(() => {
     const t = setTimeout(onDone, 4000);
@@ -335,8 +342,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       myStageStreamRef.current = stream;
-      const camContainer = document.getElementById("vibe-live-mycam");
-      setVideoSrc(camContainer, stream, true);
+      getElWithRetry("vibe-live-mycam", (camContainer) => {
+        setVideoSrc(camContainer as HTMLElement, stream, true);
+      });
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       cohostPcRef.current = pc;
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -388,11 +396,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       if (!call) return;
       viewerCallRef.current = call;
       call.on("stream", (remoteStream: MediaStream) => {
-        const container = document.getElementById("vibe-live-remote");
-        if (container) {
-          setVideoSrc(container, remoteStream);
-          setConnected(true);
-        }
+        setConnected(true);
+        getElWithRetry("vibe-live-remote", (container) => {
+          setVideoSrc(container as HTMLElement, remoteStream);
+        });
       });
       call.on("close", () => {
         Alert.alert("Live zakończony", "Gospodarz zakończył transmisję.");
@@ -454,11 +461,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         const coPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         coPc.ontrack = (e) => {
           const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
-          const container = document.getElementById("vibe-live-cohost");
-          if (container) {
-            setVideoSrc(container, stream);
-            setCohostVisible(true);
-          }
+          setCohostVisible(true);
+          getElWithRetry("vibe-live-cohost", (container) => {
+            setVideoSrc(container as HTMLElement, stream);
+          });
         };
         coPc.onicecandidate = (e) => {
           if (e.candidate) ws.send(JSON.stringify({ type: "cohost-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
@@ -892,15 +898,16 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
       localStreamRef.current = stream;
       setMicOn(true);
       setCameraOn(true);
-      const c = document.getElementById("vibe-host-video");
-      if (c) {
+      const attachHostVideo = (c: HTMLElement) => {
         c.innerHTML = "";
         const v = document.createElement("video");
         v.autoplay = true; v.muted = true; v.playsInline = true;
         v.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
         v.srcObject = stream;
         c.appendChild(v);
-      }
+        v.play().catch(() => {});
+      };
+      getElWithRetry("vibe-host-video", attachHostVideo);
 
       const { Peer } = (await import("peerjs")) as any;
       const peer = new Peer(PEER_CONFIG);
@@ -964,13 +971,13 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             pc.ontrack = (e) => {
               const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();
               cohostStreamRef.current = s;
-              const container = document.getElementById("vibe-host-cohost");
-              if (container) {
+              setCohostVisible(true);
+              getElWithRetry("vibe-host-cohost", (container) => {
                 let v = container.querySelector("video") as HTMLVideoElement | null;
                 if (!v) { v = document.createElement("video"); v.autoplay = true; v.playsInline = true; v.style.cssText = "width:100%;height:100%;object-fit:cover;"; container.appendChild(v); }
                 v.srcObject = s;
-                setCohostVisible(true);
-              }
+                v.play().catch(() => {});
+              });
               distributeCohost(s, ws);
             };
             pc.onicecandidate = (e) => {

@@ -95,42 +95,83 @@ export default function VideoScreen() {
   const peerRef = useRef<any>(null);
   const activeCallRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteContainerRef = useRef<any>(null);
+  const localContainerRef = useRef<any>(null);
+  const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
+  const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const [activeCamFilter, setActiveCamFilter] = useState("none");
   const [showCamFilters, setShowCamFilters] = useState(false);
+
+  const playVideoEl = (video: HTMLVideoElement, stream: MediaStream, muted = false) => {
+    video.srcObject = stream;
+    video.muted = true;
+    video.play().then(() => {
+      if (!muted) video.muted = false;
+    }).catch(() => {
+      video.muted = true;
+      video.play().catch(() => {});
+    });
+  };
 
   const applyFilter = useCallback((filterId: string) => {
     setActiveCamFilter(filterId);
     if (Platform.OS !== "web") return;
-    const container = document.getElementById("vibe-local-video");
-    const video = container?.querySelector("video") as HTMLVideoElement | null;
+    const video = localVideoElRef.current;
     if (video) {
       const filter = CAM_FILTERS.find(f => f.id === filterId);
       video.style.filter = filter?.css || "";
     }
   }, []);
 
-  const setRemoteVideo = (stream: MediaStream | null) => {
-    if (Platform.OS !== "web") return;
-    const remoteContainer = document.getElementById("vibe-remote-video");
-    if (!remoteContainer) return;
-    if (!stream) { remoteContainer.innerHTML = ""; return; }
-    let video = remoteContainer.querySelector("video") as HTMLVideoElement;
-    if (!video) {
+  const attachLocalVideo = useCallback((container: HTMLElement, stream: MediaStream) => {
+    if (!container) return;
+    let video = localVideoElRef.current;
+    if (!video || !container.contains(video)) {
+      container.innerHTML = "";
+      video = document.createElement("video");
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
+      container.appendChild(video);
+      localVideoElRef.current = video;
+    }
+    playVideoEl(video, stream, true);
+  }, []);
+
+  const attachRemoteVideo = useCallback((container: HTMLElement | null, stream: MediaStream | null) => {
+    if (!stream) {
+      if (remoteVideoElRef.current) {
+        remoteVideoElRef.current.srcObject = null;
+        remoteVideoElRef.current = null;
+      }
+      return;
+    }
+    const el = container || remoteContainerRef.current;
+    if (!el) {
+      pendingRemoteStreamRef.current = stream;
+      return;
+    }
+    let video = remoteVideoElRef.current;
+    if (!video || !el.contains(video)) {
+      el.innerHTML = "";
       video = document.createElement("video");
       video.autoplay = true;
       video.playsInline = true;
-      video.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:0;";
-      remoteContainer.appendChild(video);
+      video.style.cssText = "width:100%;height:100%;object-fit:cover;";
+      el.appendChild(video);
+      remoteVideoElRef.current = video;
     }
-    video.srcObject = stream;
-    video.muted = true;
-    video.play().then(() => {
-      video!.muted = false;
-    }).catch(() => {
-      video!.muted = true;
-      video!.play().catch(() => {});
-    });
-  };
+    playVideoEl(video, stream, false);
+    pendingRemoteStreamRef.current = null;
+  }, []);
+
+  const setRemoteVideo = useCallback((stream: MediaStream | null) => {
+    if (Platform.OS !== "web") return;
+    const container = remoteContainerRef.current;
+    attachRemoteVideo(container, stream);
+  }, [attachRemoteVideo]);
 
   const handlePartnerDisconnect = useCallback(() => {
     setPartnerInfo(null);
@@ -151,10 +192,12 @@ export default function VideoScreen() {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+    localVideoElRef.current = null;
+    remoteVideoElRef.current = null;
+    pendingRemoteStreamRef.current = null;
     if (Platform.OS === "web") {
-      const localContainer = document.getElementById("vibe-local-video");
-      if (localContainer) localContainer.innerHTML = "";
-      setRemoteVideo(null);
+      if (localContainerRef.current) localContainerRef.current.innerHTML = "";
+      if (remoteContainerRef.current) remoteContainerRef.current.innerHTML = "";
     }
   }, [destroyPeer]);
 
@@ -203,16 +246,8 @@ export default function VideoScreen() {
       setMicOn(true);
       setCameraOn(true);
 
-      const localContainer = document.getElementById("vibe-local-video");
-      if (localContainer) {
-        localContainer.innerHTML = "";
-        const video = document.createElement("video");
-        video.autoplay = true;
-        video.muted = true;
-        video.playsInline = true;
-        video.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
-        video.srcObject = stream;
-        localContainer.appendChild(video);
+      if (localContainerRef.current) {
+        attachLocalVideo(localContainerRef.current, stream);
       }
 
       const { Peer } = (await import("peerjs")) as any;
@@ -358,6 +393,14 @@ export default function VideoScreen() {
     return () => { cleanup(); };
   }, []);
 
+  const onRemoteContainerLayout = useCallback((node: any) => {
+    if (!node) return;
+    remoteContainerRef.current = node;
+    if (pendingRemoteStreamRef.current) {
+      attachRemoteVideo(node, pendingRemoteStreamRef.current);
+    }
+  }, [attachRemoteVideo]);
+
   if (Platform.OS !== "web") {
     return (
       <View style={[styles.container, { paddingTop: topInset }]}>
@@ -458,7 +501,7 @@ export default function VideoScreen() {
           <>
             <View style={styles.remoteVideoWrap}>
               <View
-                nativeID="vibe-remote-video"
+                ref={onRemoteContainerLayout}
                 style={styles.remoteVideoInner}
               />
               {status === "waiting" && (
@@ -485,7 +528,7 @@ export default function VideoScreen() {
 
             <View style={styles.localVideoWrap}>
               <View
-                nativeID="vibe-local-video"
+                ref={localContainerRef}
                 style={styles.localVideoInner}
               />
               {!cameraOn && (
