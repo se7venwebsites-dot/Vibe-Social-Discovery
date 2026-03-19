@@ -15,6 +15,7 @@ router.get("/lives", async (req, res) => {
       title: live.title,
       isActive: live.isActive,
       viewerCount: live.viewerCount,
+      hostPeerJsId: live.hostPeerJsId ?? null,
       createdAt: live.createdAt?.toISOString(),
       host: host ? {
         id: host.id,
@@ -28,6 +29,21 @@ router.get("/lives", async (req, res) => {
   }));
 
   res.json(results.filter(l => l.host));
+});
+
+router.get("/lives/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [live] = await db.select().from(livesTable).where(eq(livesTable.id, id));
+  if (!live) { res.status(404).json({ error: "Not found" }); return; }
+  const [host] = await db.select().from(usersTable).where(eq(usersTable.id, live.hostId));
+  res.json({
+    id: live.id,
+    title: live.title,
+    isActive: live.isActive,
+    viewerCount: live.viewerCount,
+    hostPeerJsId: live.hostPeerJsId ?? null,
+    host: host ? { id: host.id, name: host.name, photoUrl: host.photoUrl } : null,
+  });
 });
 
 router.post("/lives", async (req, res) => {
@@ -48,9 +64,17 @@ router.post("/lives", async (req, res) => {
   res.json({ id: live.id, hostId: live.hostId, title: live.title, isActive: live.isActive });
 });
 
+router.patch("/lives/:id/peer", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { peerJsId } = req.body;
+  if (!peerJsId) { res.status(400).json({ error: "peerJsId required" }); return; }
+  await db.update(livesTable).set({ hostPeerJsId: peerJsId }).where(eq(livesTable.id, id));
+  res.json({ success: true });
+});
+
 router.patch("/lives/:id/end", async (req, res) => {
   const id = parseInt(req.params.id);
-  await db.update(livesTable).set({ isActive: false }).where(eq(livesTable.id, id));
+  await db.update(livesTable).set({ isActive: false, hostPeerJsId: null }).where(eq(livesTable.id, id));
   res.json({ success: true });
 });
 

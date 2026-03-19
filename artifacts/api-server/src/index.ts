@@ -1,6 +1,8 @@
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import app from "./app";
+import { db, livesTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -21,6 +23,7 @@ interface Peer {
   filterCity?: string;
   partnerId?: string;
   peerId: string;
+  peerJsId?: string;
 }
 
 const waiting: Map<string, Peer> = new Map();
@@ -28,6 +31,7 @@ const connected: Map<string, Peer> = new Map();
 
 interface LiveRoom {
   hostPeerId: string;
+  hostPeerJsId?: string;
   viewerPeerIds: Set<string>;
   cohostPeerId?: string;
 }
@@ -109,12 +113,13 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     switch (msg.type) {
-      // ---- Random video chat ----
+      // ---- Random video chat (Omegle) ----
       case "join": {
         peer.userId = msg.userId as number;
         peer.name = msg.name as string;
         peer.age = msg.age as number;
         peer.city = msg.city as string;
+        peer.peerJsId = (msg.peerJsId as string) ?? undefined;
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? undefined;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? undefined;
         peer.filterCity = (msg.filterCity as string) ?? undefined;
@@ -128,8 +133,8 @@ wss.on("connection", (ws) => {
           match.partnerId = peerId;
           connected.set(peerId, peer);
           connected.set(match.peerId, match);
-          sendTo(peer, { type: "matched", initiator: true, partnerName: match.name, partnerAge: match.age, partnerCity: match.city });
-          sendTo(match, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city });
+          sendTo(peer, { type: "matched", initiator: true, partnerName: match.name, partnerAge: match.age, partnerCity: match.city, partnerPeerJsId: match.peerJsId });
+          sendTo(match, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPeerJsId: peer.peerJsId });
         }
         break;
       }
@@ -146,6 +151,7 @@ wss.on("connection", (ws) => {
           connected.delete(peerId);
         }
         waiting.delete(peerId);
+        peer.peerJsId = (msg.peerJsId as string) ?? peer.peerJsId;
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? peer.filterAgeMin;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? peer.filterAgeMax;
         peer.filterCity = (msg.filterCity as string) ?? peer.filterCity;
@@ -159,17 +165,8 @@ wss.on("connection", (ws) => {
           match2.partnerId = peerId;
           connected.set(peerId, peer);
           connected.set(match2.peerId, match2);
-          sendTo(peer, { type: "matched", initiator: true, partnerName: match2.name, partnerAge: match2.age, partnerCity: match2.city });
-          sendTo(match2, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city });
-        }
-        break;
-      }
-      case "offer":
-      case "answer":
-      case "ice-candidate": {
-        if (peer.partnerId) {
-          const partner = connected.get(peer.partnerId);
-          if (partner) sendTo(partner, { ...msg });
+          sendTo(peer, { type: "matched", initiator: true, partnerName: match2.name, partnerAge: match2.age, partnerCity: match2.city, partnerPeerJsId: match2.peerJsId });
+          sendTo(match2, { type: "matched", initiator: false, partnerName: peer.name, partnerAge: peer.age, partnerCity: peer.city, partnerPeerJsId: peer.peerJsId });
         }
         break;
       }
@@ -185,6 +182,7 @@ wss.on("connection", (ws) => {
         peer.userId = msg.userId as number;
         peer.name = msg.name as string;
         if (role === "host") {
+          const hostPeerJsId = (msg.peerJsId as string) ?? undefined;
           const existing = liveRooms.get(liveId);
           if (existing) {
             existing.viewerPeerIds.forEach((vId) => {
@@ -193,15 +191,22 @@ wss.on("connection", (ws) => {
               peerLiveRole.delete(vId);
             });
           }
-          liveRooms.set(liveId, { hostPeerId: peerId, viewerPeerIds: new Set() });
+          liveRooms.set(liveId, { hostPeerId: peerId, hostPeerJsId, viewerPeerIds: new Set() });
           peerLiveRole.set(peerId, { liveId, role: "host" });
+          if (hostPeerJsId) {
+            db.update(livesTable).set({ hostPeerJsId }).where(eq(livesTable.id, liveId)).catch(() => {});
+          }
           sendTo(peer, { type: "live-joined", liveId, peerId, role: "host" });
         } else {
           const room = liveRooms.get(liveId);
-          if (!room) { sendTo(peer, { type: "live-error", error: "Live nie istnieje" }); break; }
+          if (!room) {
+            // Room not found on this WS instance — send error but include hint to use PeerJS
+            sendTo(peer, { type: "live-error", error: "Live nie istnieje na tym serwerze", usePeerJs: true, liveId });
+            break;
+          }
           room.viewerPeerIds.add(peerId);
           peerLiveRole.set(peerId, { liveId, role: "viewer" });
-          sendTo(peer, { type: "live-joined", liveId, peerId, role: "viewer" });
+          sendTo(peer, { type: "live-joined", liveId, peerId, role: "viewer", hostPeerJsId: room.hostPeerJsId });
           const hostPeer = allPeers.get(room.hostPeerId);
           if (hostPeer) sendTo(hostPeer, { type: "viewer-joined", viewerPeerId: peerId, viewerName: peer.name });
         }

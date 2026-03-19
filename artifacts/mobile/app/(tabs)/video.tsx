@@ -67,17 +67,17 @@ export default function VideoScreen() {
   const [partnerInfo, setPartnerInfo] = useState<PartnerInfo | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(true);
 
-  // Filters
   const [filterAgeMin, setFilterAgeMin] = useState(18);
   const [filterAgeMax, setFilterAgeMax] = useState(40);
   const [filterCity, setFilterCity] = useState("all");
 
   const wsRef = useRef<WebSocket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const peerRef = useRef<any>(null);
+  const activeCallRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const isInitiatorRef = useRef(false);
-  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const [activeCamFilter, setActiveCamFilter] = useState("none");
   const [showCamFilters, setShowCamFilters] = useState(false);
 
@@ -92,94 +92,80 @@ export default function VideoScreen() {
     }
   }, []);
 
-  const setupWebRTC = useCallback(async (initiator: boolean, ws: WebSocket) => {
+  const setRemoteVideo = (stream: MediaStream | null) => {
     if (Platform.OS !== "web") return;
-
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-      ],
-    });
-    pcRef.current = pc;
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
-      });
+    const remoteContainer = document.getElementById("vibe-remote-video");
+    if (!remoteContainer) return;
+    if (!stream) { remoteContainer.innerHTML = ""; return; }
+    let video = remoteContainer.querySelector("video") as HTMLVideoElement;
+    if (!video) {
+      video = document.createElement("video");
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:0;";
+      remoteContainer.appendChild(video);
     }
-
-    pc.ontrack = (event) => {
-      const stream = event.streams[0] || (() => {
-        const s = new MediaStream();
-        if (event.track) s.addTrack(event.track);
-        return s;
-      })();
-      const remoteContainer = document.getElementById("vibe-remote-video");
-      if (remoteContainer && stream.getTracks().length > 0) {
-        let video = remoteContainer.querySelector("video") as HTMLVideoElement;
-        if (!video) {
-          video = document.createElement("video");
-          video.autoplay = true;
-          video.playsInline = true;
-          video.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:0;";
-          remoteContainer.appendChild(video);
-        }
-        video.srcObject = stream;
-        video.play().catch(() => {});
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "ice-candidate", candidate: event.candidate }));
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "failed") {
-        try { pc.restartIce(); } catch {}
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-        handlePartnerDisconnect();
-      }
-    };
-
-    if (initiator) {
-      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-      await pc.setLocalDescription(offer);
-      ws.send(JSON.stringify({ type: "offer", offer }));
-    }
-  }, []);
+    video.srcObject = stream;
+    video.play().catch(() => {});
+  };
 
   const handlePartnerDisconnect = useCallback(() => {
     setPartnerInfo(null);
     setStatus("waiting");
-    pendingCandidatesRef.current = [];
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    const remoteContainer = document.getElementById("vibe-remote-video");
-    if (remoteContainer) remoteContainer.innerHTML = "";
+    if (activeCallRef.current) { try { activeCallRef.current.close(); } catch {} activeCallRef.current = null; }
+    setRemoteVideo(null);
+  }, []);
+
+  const destroyPeer = useCallback(() => {
+    if (activeCallRef.current) { try { activeCallRef.current.close(); } catch {} activeCallRef.current = null; }
+    if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
   }, []);
 
   const cleanup = useCallback(() => {
-    pendingCandidatesRef.current = [];
-    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    destroyPeer();
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
-    const localContainer = document.getElementById("vibe-local-video");
-    if (localContainer) localContainer.innerHTML = "";
-    const remoteContainer = document.getElementById("vibe-remote-video");
-    if (remoteContainer) remoteContainer.innerHTML = "";
-  }, []);
+    if (Platform.OS === "web") {
+      const localContainer = document.getElementById("vibe-local-video");
+      if (localContainer) localContainer.innerHTML = "";
+      setRemoteVideo(null);
+    }
+  }, [destroyPeer]);
+
+  const connectWithPeerJs = useCallback(async (
+    initiator: boolean,
+    partnerPeerJsId: string,
+    stream: MediaStream,
+  ) => {
+    if (Platform.OS !== "web") return;
+    if (initiator) {
+      const call = peerRef.current.call(partnerPeerJsId, stream);
+      if (!call) return;
+      activeCallRef.current = call;
+      call.on("stream", (remoteStream: MediaStream) => {
+        setRemoteVideo(remoteStream);
+        setStatus("connected");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      });
+      call.on("close", () => handlePartnerDisconnect());
+      call.on("error", () => handlePartnerDisconnect());
+    } else {
+      peerRef.current.on("call", (call: any) => {
+        activeCallRef.current = call;
+        call.answer(stream);
+        call.on("stream", (remoteStream: MediaStream) => {
+          setRemoteVideo(remoteStream);
+          setStatus("connected");
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        });
+        call.on("close", () => handlePartnerDisconnect());
+        call.on("error", () => handlePartnerDisconnect());
+      });
+    }
+  }, [handlePartnerDisconnect]);
 
   const handleConnect = useCallback(async () => {
     if (Platform.OS !== "web") return;
@@ -191,6 +177,8 @@ export default function VideoScreen() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
+      setMicOn(true);
+      setCameraOn(true);
 
       const localContainer = document.getElementById("vibe-local-video");
       if (localContainer) {
@@ -204,89 +192,70 @@ export default function VideoScreen() {
         localContainer.appendChild(video);
       }
 
-      setStatus("waiting");
+      const { Peer } = (await import("peerjs")) as any;
+      const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+      peerRef.current = peer;
 
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({
-          type: "join",
-          userId: currentUser?.id,
-          name: currentUser?.name,
-          age: currentUser?.age,
-          city: currentUser?.city,
-          filterAgeMin,
-          filterAgeMax,
-          filterCity,
-        }));
-      };
-
-      ws.onmessage = async (event) => {
-        const msg = JSON.parse(event.data);
-
-        switch (msg.type) {
-          case "matched": {
-            isInitiatorRef.current = msg.initiator;
-            setPartnerInfo({ name: msg.partnerName, age: msg.partnerAge, city: msg.partnerCity });
-            setStatus("connected");
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            pendingCandidatesRef.current = [];
-            if (msg.initiator) {
-              await setupWebRTC(true, ws);
-            }
-            break;
-          }
-          case "offer": {
-            if (!pcRef.current) await setupWebRTC(false, ws);
-            if (pcRef.current) {
-              await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.offer));
-              for (const c of pendingCandidatesRef.current) {
-                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch {}
-              }
-              pendingCandidatesRef.current = [];
-              const answer = await pcRef.current.createAnswer();
-              await pcRef.current.setLocalDescription(answer);
-              ws.send(JSON.stringify({ type: "answer", answer }));
-            }
-            break;
-          }
-          case "answer": {
-            if (pcRef.current) {
-              await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.answer));
-              for (const c of pendingCandidatesRef.current) {
-                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(c)); } catch {}
-              }
-              pendingCandidatesRef.current = [];
-            }
-            break;
-          }
-          case "ice-candidate": {
-            if (msg.candidate) {
-              if (pcRef.current?.remoteDescription) {
-                try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-              } else {
-                pendingCandidatesRef.current.push(msg.candidate);
-              }
-            }
-            break;
-          }
-          case "partner-disconnected": {
-            handlePartnerDisconnect();
-            break;
-          }
+      peer.on("error", (err: any) => {
+        console.warn("PeerJS error:", err.type, err.message);
+        if (err.type === "peer-unavailable") {
+          handlePartnerDisconnect();
+        } else if (err.type !== "server-error") {
+          setErrorMsg("Błąd połączenia P2P. Spróbuj ponownie.");
+          setStatus("error");
+          cleanup();
         }
-      };
+      });
 
-      ws.onclose = () => {
-        if (status !== "idle") setStatus("idle");
-      };
+      peer.on("open", (myPeerId: string) => {
+        setStatus("waiting");
 
-      ws.onerror = () => {
-        setErrorMsg("Błąd połączenia. Sprawdź internet.");
-        setStatus("error");
-        cleanup();
-      };
+        const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "join",
+            peerJsId: myPeerId,
+            userId: currentUser?.id,
+            name: currentUser?.name,
+            age: currentUser?.age,
+            city: currentUser?.city,
+            filterAgeMin,
+            filterAgeMax,
+            filterCity,
+          }));
+        };
+
+        ws.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === "matched") {
+            const { initiator, partnerPeerJsId, partnerName, partnerAge, partnerCity } = msg;
+            setPartnerInfo({ name: partnerName, age: partnerAge, city: partnerCity });
+            if (partnerPeerJsId) {
+              await connectWithPeerJs(initiator, partnerPeerJsId, stream);
+            } else {
+              setStatus("connected");
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          }
+
+          if (msg.type === "partner-disconnected") {
+            handlePartnerDisconnect();
+          }
+        };
+
+        ws.onclose = () => {
+          if (status !== "idle") setStatus("idle");
+        };
+
+        ws.onerror = () => {
+          setErrorMsg("Błąd połączenia z serwerem.");
+          setStatus("error");
+          cleanup();
+        };
+      });
     } catch (e: unknown) {
       const err = e as Error;
       setErrorMsg(err.name === "NotAllowedError"
@@ -294,19 +263,52 @@ export default function VideoScreen() {
         : "Nie udało się uruchomić kamery.");
       setStatus("error");
     }
-  }, [currentUser, filterAgeMin, filterAgeMax, filterCity, setupWebRTC, handlePartnerDisconnect, cleanup]);
+  }, [currentUser, filterAgeMin, filterAgeMax, filterCity, connectWithPeerJs, handlePartnerDisconnect, cleanup]);
 
   const handleNext = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setPartnerInfo(null);
     setStatus("waiting");
-    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
-    const remoteContainer = document.getElementById("vibe-remote-video");
-    if (remoteContainer) remoteContainer.innerHTML = "";
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "next", filterAgeMin, filterAgeMax, filterCity }));
-    }
-  }, [filterAgeMin, filterAgeMax, filterCity]);
+    if (activeCallRef.current) { try { activeCallRef.current.close(); } catch {} activeCallRef.current = null; }
+    setRemoteVideo(null);
+
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
+
+    const createNewPeer = async () => {
+      const { Peer } = (await import("peerjs")) as any;
+      const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+      peerRef.current = peer;
+      peer.on("error", (err: any) => {
+        if (err.type === "peer-unavailable") {
+          handlePartnerDisconnect();
+        }
+      });
+      peer.on("open", (myPeerId: string) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: "next",
+            peerJsId: myPeerId,
+            filterAgeMin,
+            filterAgeMax,
+            filterCity,
+          }));
+        }
+        peer.on("call", (call: any) => {
+          activeCallRef.current = call;
+          call.answer(stream);
+          call.on("stream", (remoteStream: MediaStream) => {
+            setRemoteVideo(remoteStream);
+            setStatus("connected");
+          });
+          call.on("close", () => handlePartnerDisconnect());
+        });
+      });
+    };
+    createNewPeer();
+  }, [filterAgeMin, filterAgeMax, filterCity, handlePartnerDisconnect]);
 
   const handleDisconnect = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -314,6 +316,20 @@ export default function VideoScreen() {
     setPartnerInfo(null);
     cleanup();
   }, [cleanup]);
+
+  const toggleMic = useCallback(() => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    setMicOn(v => !v);
+    Haptics.selectionAsync();
+  }, []);
+
+  const toggleCamera = useCallback(() => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    setCameraOn(v => !v);
+    Haptics.selectionAsync();
+  }, []);
 
   useEffect(() => {
     return () => { cleanup(); };
@@ -449,6 +465,11 @@ export default function VideoScreen() {
                 nativeID="vibe-local-video"
                 style={styles.localVideoInner}
               />
+              {!cameraOn && (
+                <View style={styles.camOffOverlay}>
+                  <Feather name="video-off" size={20} color={Colors.textMuted} />
+                </View>
+              )}
             </View>
           </>
         )}
@@ -475,6 +496,20 @@ export default function VideoScreen() {
               onPress={handleDisconnect}
             >
               <Feather name="phone-off" size={24} color={Colors.danger} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.ctrlBtn, !micOn && styles.ctrlBtnMuted, pressed && { opacity: 0.8 }]}
+              onPress={toggleMic}
+            >
+              <Feather name={micOn ? "mic" : "mic-off"} size={22} color={micOn ? Colors.accent : Colors.textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.ctrlBtn, !cameraOn && styles.ctrlBtnMuted, pressed && { opacity: 0.8 }]}
+              onPress={toggleCamera}
+            >
+              <Feather name={cameraOn ? "video" : "video-off"} size={22} color={cameraOn ? Colors.accent : Colors.textMuted} />
             </Pressable>
 
             {status === "connected" && Platform.OS === "web" ? (
@@ -659,6 +694,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardBg,
   },
   localVideoInner: { flex: 1 },
+  camOffOverlay: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   filterBar: {
     position: "absolute",
     bottom: 80,
@@ -698,10 +740,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
   ctrlBtnDanger: {
     borderColor: Colors.danger,
     backgroundColor: "rgba(255,59,92,0.1)",
+  },
+  ctrlBtnMuted: {
+    borderColor: Colors.border,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   ctrlBtnFilterActive: {
     backgroundColor: Colors.accent,

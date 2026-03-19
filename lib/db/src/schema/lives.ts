@@ -8,6 +8,7 @@ export const livesTable = pgTable("lives", {
   title: text("title").notNull().default("Live"),
   isActive: boolean("is_active").notNull().default(true),
   viewerCount: integer("viewer_count").notNull().default(0),
+  hostPeerJsId: text("host_peer_js_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

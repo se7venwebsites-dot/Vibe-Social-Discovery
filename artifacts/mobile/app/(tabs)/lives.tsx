@@ -242,6 +242,8 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   currentUser: { id: number; name: string } | null;
 }) {
   const wsRef = useRef<WebSocket | null>(null);
+  const viewerPeerRef = useRef<any>(null);
+  const viewerCallRef = useRef<any>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const cohostPcRef = useRef<RTCPeerConnection | null>(null);
   const myStageStreamRef = useRef<MediaStream | null>(null);
@@ -279,6 +281,8 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   };
 
   const cleanup = useCallback(() => {
+    if (viewerCallRef.current) { try { viewerCallRef.current.close(); } catch {} viewerCallRef.current = null; }
+    if (viewerPeerRef.current) { try { viewerPeerRef.current.destroy(); } catch {} viewerPeerRef.current = null; }
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
     if (cohostPcRef.current) { cohostPcRef.current.close(); cohostPcRef.current = null; }
     if (myStageStreamRef.current) { myStageStreamRef.current.getTracks().forEach(t => t.stop()); myStageStreamRef.current = null; }
@@ -294,6 +298,10 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     setGiftToasts([]);
     setFloatingHearts([]);
     setAddedFriend(false);
+    if (Platform.OS === "web") {
+      const rc = document.getElementById("vibe-live-remote");
+      if (rc) rc.innerHTML = "";
+    }
     if (live) {
       fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: -1 }) }).catch(() => {});
     }
@@ -326,6 +334,58 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
     }
   }, [stageInvite]);
 
+  const callHostViaPeerJs = useCallback(async (hostPeerJsId: string) => {
+    if (Platform.OS !== "web") return;
+    const { Peer } = (await import("peerjs")) as any;
+    const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+    viewerPeerRef.current = peer;
+
+    peer.on("error", (err: any) => {
+      console.warn("Viewer PeerJS error:", err.type, err.message);
+      if (err.type === "peer-unavailable") {
+        Alert.alert("Błąd", "Host nie jest dostępny. Być może live się zakończył.");
+        cleanup();
+        onClose();
+      } else if (err.type !== "server-error") {
+        Alert.alert("Błąd połączenia", "Nie można połączyć się z hostem live.");
+        cleanup();
+        onClose();
+      }
+    });
+
+    peer.on("open", () => {
+      let audioCtx: AudioContext | null = null;
+      let silentStream: MediaStream;
+      try {
+        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        silentStream = dest.stream;
+      } catch {
+        silentStream = new MediaStream();
+      }
+      const call = peer.call(hostPeerJsId, silentStream);
+      if (!call) return;
+      viewerCallRef.current = call;
+      call.on("stream", (remoteStream: MediaStream) => {
+        const container = document.getElementById("vibe-live-remote");
+        if (container) {
+          setVideoSrc(container, remoteStream);
+          setConnected(true);
+        }
+      });
+      call.on("close", () => {
+        Alert.alert("Live zakończony", "Gospodarz zakończył transmisję.");
+        cleanup();
+        onClose();
+      });
+      call.on("error", () => {
+        Alert.alert("Błąd", "Połączenie z hostem zostało przerwane.");
+        cleanup();
+        onClose();
+      });
+    });
+  }, [cleanup, onClose]);
+
   useEffect(() => {
     if (!visible || !live) return;
     if (Platform.OS !== "web") return;
@@ -347,57 +407,9 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
         myPeerIdRef.current = msg.peerId;
       }
 
-      if (msg.type === "live-offer") {
-        hostPeerIdRef.current = msg.fromPeerId as string;
-        let pc = pcRef.current;
-        if (!pc) {
-          pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-          pcRef.current = pc;
-
-          pc.ontrack = (e) => {
-            const stream = e.streams[0] || (() => {
-              const s = new MediaStream();
-              if (e.track) s.addTrack(e.track);
-              return s;
-            })();
-            const container = document.getElementById("vibe-live-remote");
-            if (container && stream.getTracks().length > 0) {
-              setVideoSrc(container, stream);
-              setConnected(true);
-            }
-          };
-
-          pc.onicecandidate = (e) => {
-            if (e.candidate) {
-              ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: msg.fromPeerId }));
-            }
-          };
-
-          pc.oniceconnectionstatechange = () => {
-            if (pc!.iceConnectionState === "failed") {
-              try { pc!.restartIce(); } catch {}
-            }
-            if (pc!.iceConnectionState === "connected" || pc!.iceConnectionState === "completed") {
-              setConnected(true);
-            }
-          };
-        }
-
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-        for (const c of pendingIceRef.current) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
-        }
-        pendingIceRef.current = [];
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: "live-answer", answer, targetPeerId: msg.fromPeerId }));
-      }
-
-      if (msg.type === "live-ice") {
-        if (pcRef.current?.remoteDescription) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-        } else {
-          pendingIceRef.current.push(msg.candidate);
+      if (msg.type === "live-joined") {
+        if (msg.hostPeerJsId) {
+          callHostViaPeerJs(msg.hostPeerJsId as string);
         }
       }
 
@@ -450,9 +462,33 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
 
       if (msg.type === "live-error") {
-        Alert.alert("Błąd", msg.error || "Nie można dołączyć do live'a");
-        cleanup();
-        onClose();
+        if (msg.usePeerJs) {
+          try {
+            const res = await fetch(`${BASE_URL}/lives/${live.id}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.hostPeerJsId) {
+                await callHostViaPeerJs(data.hostPeerJsId as string);
+              } else {
+                Alert.alert("Błąd", "Host nie jest dostępny.");
+                cleanup();
+                onClose();
+              }
+            } else {
+              Alert.alert("Błąd", "Nie można dołączyć do live'a.");
+              cleanup();
+              onClose();
+            }
+          } catch {
+            Alert.alert("Błąd", "Problem z połączeniem.");
+            cleanup();
+            onClose();
+          }
+        } else {
+          Alert.alert("Błąd", (msg.error as string) || "Nie można dołączyć do live'a");
+          cleanup();
+          onClose();
+        }
       }
 
       if (msg.type === "live-ended") {
@@ -699,6 +735,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; title: string } | null; visible: boolean; onClose: () => void }) {
   const wsRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const peerRef = useRef<any>(null);
   const viewerPcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingIceMap = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const cohostPcRef = useRef<RTCPeerConnection | null>(null);
@@ -717,6 +754,9 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   const [showViewers, setShowViewers] = useState(false);
   const [activeFilter, setActiveFilter] = useState("none");
   const [showFilters, setShowFilters] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(true);
+  const [broadcastError, setBroadcastError] = useState("");
   const chatListRef = useRef<any>(null);
   const queryClient = useQueryClient();
 
@@ -749,7 +789,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     }
   }, []);
 
-  const cleanup = useCallback(() => {
+  const cleanupMedia = useCallback(() => {
     viewerPcsRef.current.forEach(pc => pc.close());
     viewerPcsRef.current.clear();
     cohostViewerPcsRef.current.forEach(pc => pc.close());
@@ -757,16 +797,14 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     pendingIceMap.current.clear();
     if (cohostPcRef.current) { cohostPcRef.current.close(); cohostPcRef.current = null; }
     cohostStreamRef.current = null;
-    if (wsRef.current) { wsRef.current.send(JSON.stringify({ type: "end-live" })); wsRef.current.close(); wsRef.current = null; }
+    if (wsRef.current) { try { wsRef.current.send(JSON.stringify({ type: "end-live" })); } catch {} wsRef.current.close(); wsRef.current = null; }
+    if (peerRef.current) { try { peerRef.current.destroy(); } catch {} peerRef.current = null; }
     if (localStreamRef.current) { localStreamRef.current.getTracks().forEach(t => t.stop()); localStreamRef.current = null; }
     if (Platform.OS === "web") {
       const c = document.getElementById("vibe-host-video");
       if (c) c.innerHTML = "";
       const ch = document.getElementById("vibe-host-cohost");
       if (ch) ch.innerHTML = "";
-    }
-    if (live) {
-      fetch(`${BASE_URL}/lives/${live.id}/end`, { method: "PATCH" }).catch(() => {});
     }
     setBroadcasting(false);
     setViewerCount(0);
@@ -777,8 +815,18 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     setViewers([]);
     setShowViewers(false);
     setShowFilters(false);
+    setBroadcastError("");
+    setMicOn(true);
+    setCameraOn(true);
+  }, []);
+
+  const endLive = useCallback(() => {
+    if (live) {
+      fetch(`${BASE_URL}/lives/${live.id}/end`, { method: "PATCH" }).catch(() => {});
+    }
+    cleanupMedia();
     queryClient.invalidateQueries({ queryKey: ["lives"] });
-  }, [live]);
+  }, [live, cleanupMedia]);
 
   const inviteToStage = useCallback((viewerPeerId: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -787,27 +835,72 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
     }
   }, []);
 
+  const toggleMic = useCallback(() => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    setMicOn(v => !v);
+    Haptics.selectionAsync();
+  }, []);
+
+  const toggleCamera = useCallback(() => {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    setCameraOn(v => !v);
+    Haptics.selectionAsync();
+    if (Platform.OS === "web") {
+      const c = document.getElementById("vibe-host-video");
+      const v = c?.querySelector("video") as HTMLVideoElement | null;
+      if (v) v.style.display = cameraOn ? "none" : "";
+    }
+  }, [cameraOn]);
+
   useEffect(() => {
     if (!visible || !live || Platform.OS !== "web") return;
 
+    setBroadcastError("");
+
     const startBroadcast = async () => {
+      let stream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localStreamRef.current = stream;
-        const c = document.getElementById("vibe-host-video");
-        if (c) {
-          c.innerHTML = "";
-          const v = document.createElement("video");
-          v.autoplay = true; v.muted = true; v.playsInline = true;
-          v.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
-          v.srcObject = stream;
-          c.appendChild(v);
-        }
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (e: unknown) {
+        const err = e as Error;
+        setBroadcastError(err.name === "NotAllowedError" ? "Brak dostępu do kamery. Zezwól w ustawieniach." : "Nie udało się uruchomić kamery.");
+        return;
+      }
+      localStreamRef.current = stream;
+      setMicOn(true);
+      setCameraOn(true);
+      const c = document.getElementById("vibe-host-video");
+      if (c) {
+        c.innerHTML = "";
+        const v = document.createElement("video");
+        v.autoplay = true; v.muted = true; v.playsInline = true;
+        v.style.cssText = "width:100%;height:100%;object-fit:cover;transform:scaleX(-1);";
+        v.srcObject = stream;
+        c.appendChild(v);
+      }
+
+      const { Peer } = (await import("peerjs")) as any;
+      const peer = new Peer({ host: "0.peerjs.com", secure: true, port: 443, path: "/" });
+      peerRef.current = peer;
+
+      peer.on("error", (err: any) => {
+        console.warn("Host PeerJS error:", err.type, err.message);
+      });
+
+      peer.on("open", (peerJsId: string) => {
         setBroadcasting(true);
+        fetch(`${BASE_URL}/lives/${live.id}/peer`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ peerJsId }),
+        }).catch(() => {});
+
         const ws = new WebSocket(WS_URL);
         wsRef.current = ws;
         ws.onopen = () => {
-          ws.send(JSON.stringify({ type: "join-live", liveId: live.id, role: "host" }));
+          ws.send(JSON.stringify({ type: "join-live", liveId: live.id, role: "host", peerJsId }));
         };
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
@@ -827,64 +920,13 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           }
 
           if (msg.type === "viewer-joined") {
-            const viewerPeerId = msg.viewerPeerId as string;
             const viewerName = (msg.viewerName as string) || "Widz";
-            setViewerCount(c => c + 1);
+            const viewerPeerId = msg.viewerPeerId as string;
             setViewers(prev => [...prev, { peerId: viewerPeerId, name: viewerName }]);
-            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-            viewerPcsRef.current.set(viewerPeerId, pc);
-            pendingIceMap.current.set(viewerPeerId, []);
-            localStreamRef.current?.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
-            pc.onicecandidate = (e) => {
-              if (e.candidate) ws.send(JSON.stringify({ type: "live-ice", candidate: e.candidate, targetPeerId: viewerPeerId }));
-            };
-            pc.oniceconnectionstatechange = () => {
-              if (pc.iceConnectionState === "failed") {
-                try { pc.restartIce(); } catch {}
-              }
-            };
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: "live-offer", offer, targetPeerId: viewerPeerId }));
-          }
-
-          if (msg.type === "live-answer") {
-            const viewerPeerId = msg.fromPeerId as string;
-            const pc = viewerPcsRef.current.get(viewerPeerId);
-            if (pc) {
-              try {
-                await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-                const pending = pendingIceMap.current.get(viewerPeerId) || [];
-                for (const c of pending) {
-                  try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
-                }
-                pendingIceMap.current.delete(viewerPeerId);
-              } catch {}
-            }
-          }
-
-          if (msg.type === "live-ice") {
-            const viewerPeerId = msg.fromPeerId as string;
-            const pc = viewerPcsRef.current.get(viewerPeerId);
-            if (pc) {
-              if (pc.remoteDescription) {
-                try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-              } else {
-                const pending = pendingIceMap.current.get(viewerPeerId) || [];
-                pending.push(msg.candidate);
-                pendingIceMap.current.set(viewerPeerId, pending);
-              }
-            }
           }
 
           if (msg.type === "viewer-left") {
             const leftPeerId = msg.viewerPeerId as string;
-            const pc = viewerPcsRef.current.get(leftPeerId);
-            if (pc) { pc.close(); viewerPcsRef.current.delete(leftPeerId); }
-            const cPc = cohostViewerPcsRef.current.get(leftPeerId);
-            if (cPc) { cPc.close(); cohostViewerPcsRef.current.delete(leftPeerId); }
-            pendingIceMap.current.delete(leftPeerId);
-            setViewerCount(c => Math.max(0, c - 1));
             setViewers(prev => prev.filter(v => v.peerId !== leftPeerId));
           }
 
@@ -893,21 +935,16 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
             cohostPcRef.current = pc;
             pc.ontrack = (e) => {
-              const stream = e.streams[0] || (() => { const s = new MediaStream(); if (e.track) s.addTrack(e.track); return s; })();
-              cohostStreamRef.current = stream;
+              const s = e.streams[0] || (() => { const ms = new MediaStream(); if (e.track) ms.addTrack(e.track); return ms; })();
+              cohostStreamRef.current = s;
               const container = document.getElementById("vibe-host-cohost");
               if (container) {
                 let v = container.querySelector("video") as HTMLVideoElement | null;
-                if (!v) {
-                  v = document.createElement("video");
-                  v.autoplay = true; v.playsInline = true;
-                  v.style.cssText = "width:100%;height:100%;object-fit:cover;";
-                  container.appendChild(v);
-                }
-                v.srcObject = stream;
+                if (!v) { v = document.createElement("video"); v.autoplay = true; v.playsInline = true; v.style.cssText = "width:100%;height:100%;object-fit:cover;"; container.appendChild(v); }
+                v.srcObject = s;
                 setCohostVisible(true);
               }
-              distributeCohost(stream, ws);
+              distributeCohost(s, ws);
             };
             pc.onicecandidate = (e) => {
               if (e.candidate) ws.send(JSON.stringify({ type: "stage-ice", candidate: e.candidate, targetPeerId: cohostPeerId }));
@@ -919,9 +956,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           }
 
           if (msg.type === "stage-ice") {
-            if (cohostPcRef.current) {
-              try { await cohostPcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-            }
+            if (cohostPcRef.current) { try { await cohostPcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {} }
           }
 
           if (msg.type === "stage-left") {
@@ -941,21 +976,22 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
 
           if (msg.type === "cohost-ice") {
             const pc = cohostViewerPcsRef.current.get(msg.fromPeerId as string);
-            if (pc && pc.remoteDescription) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-            }
+            if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {} }
           }
         };
-        ws.onclose = () => setBroadcasting(false);
-      } catch (e: unknown) {
-        const err = e as Error;
-        Alert.alert("Błąd kamery", err.name === "NotAllowedError" ? "Zezwól na dostęp do kamery." : "Nie udało się uruchomić kamery.");
-        onClose();
-      }
+        ws.onclose = () => {};
+      });
+
+      peer.on("call", (call: any) => {
+        call.answer(stream);
+        setViewerCount(c => c + 1);
+        call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
+        call.on("error", () => setViewerCount(c => Math.max(0, c - 1)));
+      });
     };
 
     startBroadcast();
-    return () => { cleanup(); };
+    return () => { cleanupMedia(); };
   }, [visible, live]);
 
   return (
@@ -1089,6 +1125,16 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
           <View nativeID="vibe-host-cohost" style={styles.cohostPip} />
         )}
 
+        {broadcastError ? (
+          <View style={styles.broadcastErrorBox}>
+            <Feather name="alert-triangle" size={20} color={Colors.danger} />
+            <Text style={styles.broadcastErrorText}>{broadcastError}</Text>
+            <Pressable style={styles.broadcastErrorClose} onPress={() => { endLive(); onClose(); }}>
+              <Text style={styles.broadcastErrorCloseText}>Zamknij</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.hostBottomBar}>
           <Pressable
             style={[styles.hostBarBtn, showChat && styles.hostBarBtnActive]}
@@ -1097,9 +1143,24 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
             <Feather name="message-circle" size={17} color={showChat ? Colors.black : "#fff"} />
             <Text style={[styles.hostBarBtnText, showChat && { color: Colors.black }]}>Czat</Text>
           </Pressable>
+
+          <Pressable
+            style={[styles.hostBarBtn, !micOn && { backgroundColor: "rgba(255,59,92,0.18)", borderWidth: 1, borderColor: "rgba(255,59,92,0.4)" }]}
+            onPress={toggleMic}
+          >
+            <Feather name={micOn ? "mic" : "mic-off"} size={17} color={micOn ? "#fff" : Colors.danger} />
+          </Pressable>
+
+          <Pressable
+            style={[styles.hostBarBtn, !cameraOn && { backgroundColor: "rgba(255,59,92,0.18)", borderWidth: 1, borderColor: "rgba(255,59,92,0.4)" }]}
+            onPress={toggleCamera}
+          >
+            <Feather name={cameraOn ? "video" : "video-off"} size={17} color={cameraOn ? "#fff" : Colors.danger} />
+          </Pressable>
+
           <Pressable
             style={styles.endLiveBtn}
-            onPress={() => { cleanup(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
+            onPress={() => { endLive(); onClose(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }}
           >
             <View style={styles.endLiveDot} />
             <Text style={styles.endLiveBtnText}>Zakończ live</Text>
@@ -1426,6 +1487,10 @@ const styles = StyleSheet.create({
   filterChipText: { fontFamily: "Montserrat_500Medium", fontSize: 11, color: Colors.textSecondary },
   filterChipTextActive: { color: Colors.black },
 
+  broadcastErrorBox: { position: "absolute", top: "40%", left: 24, right: 24, backgroundColor: "rgba(20,0,0,0.92)", borderRadius: 18, padding: 22, gap: 12, alignItems: "center", zIndex: 300, borderWidth: 1, borderColor: Colors.danger },
+  broadcastErrorText: { fontFamily: "Montserrat_500Medium", fontSize: 14, color: "#fff", textAlign: "center" },
+  broadcastErrorClose: { backgroundColor: Colors.danger, paddingHorizontal: 28, paddingVertical: 10, borderRadius: 12 },
+  broadcastErrorCloseText: { fontFamily: "Montserrat_700Bold", fontSize: 14, color: "#fff" },
   hostBottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, paddingBottom: 24, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 10 },
   hostBarBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
   hostBarBtnActive: { backgroundColor: Colors.accent },
