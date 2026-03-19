@@ -445,17 +445,21 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
       }
     });
 
-    peer.on("open", () => {
-      let silentStream = new MediaStream();
+    peer.on("open", async () => {
+      let offeringStream = new MediaStream();
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const dest = audioCtx.createMediaStreamDestination();
-        dest.stream.getAudioTracks().forEach(t => silentStream.addTrack(t));
-      } catch {}
+        const cam = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 2 }, height: { ideal: 2 } }, audio: true });
+        cam.getVideoTracks().forEach(t => { t.enabled = false; offeringStream.addTrack(t); });
+        cam.getAudioTracks().forEach(t => offeringStream.addTrack(t));
+      } catch {
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const dest = audioCtx.createMediaStreamDestination();
+          dest.stream.getAudioTracks().forEach(t => offeringStream.addTrack(t));
+        } catch {}
+      }
       
-      const call = peer.call(hostPeerJsId, silentStream, { 
-        offerOptions: { offerToReceiveVideo: true, offerToReceiveAudio: true }
-      });
+      const call = peer.call(hostPeerJsId, offeringStream);
       if (!call) return;
       viewerCallRef.current = call;
       call.on("stream", (rs: MediaStream) => {
@@ -1052,6 +1056,10 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
       });
 
       peer.on("call", (call: any) => {
+        if (!stream) { console.warn("HOST: stream is null!"); call.close(); return; }
+        const vTracks = stream.getVideoTracks();
+        const aTracks = stream.getAudioTracks();
+        console.warn(`HOST ANSWER: v=${vTracks.length}(${vTracks.map(t=>t.readyState).join(",")}) a=${aTracks.length}`);
         call.answer(stream);
         setViewerCount(c => c + 1);
         call.on("close", () => setViewerCount(c => Math.max(0, c - 1)));
