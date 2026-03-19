@@ -16,6 +16,8 @@ export function toUserDto(u: typeof usersTable.$inferSelect) {
     photos: u.photos ?? [],
     isPremium: u.isPremium,
     city: u.city,
+    voivodeship: u.voivodeship ?? null,
+    gender: u.gender ?? null,
     interests: u.interests ?? [],
     lat: u.lat ?? null,
     lng: u.lng ?? null,
@@ -98,7 +100,7 @@ router.post("/users/:id/location", async (req, res) => {
 });
 
 router.post("/users/register", async (req, res) => {
-  const { name, username, age, bio, photoUrl, photos, city, interests } = req.body;
+  const { name, username, age, bio, photoUrl, photos, city, voivodeship, gender, interests } = req.body;
   if (!name || !age || !bio) { res.status(400).json({ error: "name, age, bio required" }); return; }
 
   const rawUsername = username ? username.replace(/^@/, "").toLowerCase() : null;
@@ -118,6 +120,8 @@ router.post("/users/register", async (req, res) => {
     photoUrl: photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ccff00&color=000&size=400`,
     photos: photos || [],
     city: city || null,
+    voivodeship: voivodeship || null,
+    gender: gender || null,
     interests: interests || [],
     isPremium: false,
     lat: coords?.[0] ?? null,
@@ -160,7 +164,7 @@ router.patch("/users/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
-  const { name, username, age, bio, photoUrl, photos, city, interests } = req.body;
+  const { name, username, age, bio, photoUrl, photos, city, voivodeship, gender, interests } = req.body;
   const updates: Record<string, unknown> = {};
 
   if (name !== undefined) updates.name = name;
@@ -169,6 +173,8 @@ router.patch("/users/:id", async (req, res) => {
   if (photoUrl !== undefined) updates.photoUrl = photoUrl;
   if (photos !== undefined) updates.photos = photos;
   if (interests !== undefined) updates.interests = interests;
+  if (voivodeship !== undefined) updates.voivodeship = voivodeship;
+  if (gender !== undefined) updates.gender = gender;
 
   if (city !== undefined) {
     updates.city = city;

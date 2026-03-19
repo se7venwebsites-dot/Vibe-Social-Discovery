@@ -34,10 +34,11 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
 import { PremiumModal } from "@/components/PremiumModal";
+import { VOIVODESHIPS, VOIVODESHIP_NAMES } from "@/constants/poland";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const CARD_W = SCREEN_W - 24;
-const CARD_H = SCREEN_H * 0.75;
+const CARD_H = SCREEN_H * 0.62;
 const SWIPE_THRESHOLD = SCREEN_W * 0.32;
 
 interface User {
@@ -51,6 +52,8 @@ interface User {
   isVerified?: boolean;
   isBoosted?: boolean;
   city?: string;
+  voivodeship?: string;
+  gender?: string;
   interests?: string[];
 }
 
@@ -218,6 +221,10 @@ export default function DiscoverScreen() {
   const [swipeMsgUser, setSwipeMsgUser] = useState<User | null>(null);
   const [swipeMsgText, setSwipeMsgText] = useState("");
   const [sendingSwipeMsg, setSendingSwipeMsg] = useState(false);
+  const [filterGender, setFilterGender] = useState("all");
+  const [filterVoivodeship, setFilterVoivodeship] = useState("all");
+  const [filterCity, setFilterCity] = useState("all");
+  const [showLocationFilter, setShowLocationFilter] = useState(false);
   const topInset = Platform.OS === "web" ? 67 : insets.top;
   const queryClient = useQueryClient();
 
@@ -255,12 +262,21 @@ export default function DiscoverScreen() {
     if (usersData && usersData.length > 0) {
       setCardStack(prev => {
         const existingIds = new Set(prev.map(u => u.id));
-        const newCards = usersData.filter(u => !existingIds.has(u.id));
+        let newCards = usersData.filter(u => !existingIds.has(u.id));
+        if (filterGender !== "all") {
+          newCards = newCards.filter(u => u.gender === filterGender);
+        }
+        if (isPremium && filterVoivodeship !== "all") {
+          newCards = newCards.filter(u => u.voivodeship === filterVoivodeship);
+        }
+        if (isPremium && filterCity !== "all") {
+          newCards = newCards.filter(u => u.city === filterCity);
+        }
         if (newCards.length === 0) return prev;
         return [...prev, ...newCards].slice(0, 15);
       });
     }
-  }, [usersData]);
+  }, [usersData, filterGender, filterVoivodeship, filterCity, isPremium]);
 
   const handleBuyBoost = async (boost: BoostType) => {
     if (!currentUser) return;
@@ -425,6 +441,41 @@ export default function DiscoverScreen() {
         )}
       </View>
 
+      <View style={styles.filtersBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersScroll}>
+          <Pressable style={styles.boostBtn} onPress={() => setShowBoosts(true)}>
+            <Text style={styles.boostBtnIcon}>⚡</Text>
+            <Text style={styles.boostBtnText}>Ulepszenia</Text>
+          </Pressable>
+          <View style={styles.filterDivider} />
+          {(["all", "male", "female", "other"] as const).map(g => (
+            <Pressable
+              key={g}
+              style={[styles.filterChip, filterGender === g && styles.filterChipActive]}
+              onPress={() => { setFilterGender(g); setCardStack([]); refetch(); Haptics.selectionAsync(); }}
+            >
+              <Text style={[styles.filterChipText, filterGender === g && styles.filterChipTextActive]}>
+                {g === "all" ? "Wszyscy" : g === "male" ? "👨 Mężczyzna" : g === "female" ? "👩 Kobieta" : "🌈 Inna"}
+              </Text>
+            </Pressable>
+          ))}
+          <View style={styles.filterDivider} />
+          <Pressable
+            style={[styles.filterChip, (filterVoivodeship !== "all" || filterCity !== "all") && styles.filterChipActive]}
+            onPress={() => {
+              if (!isPremium) { setShowPremium(true); return; }
+              setShowLocationFilter(true); Haptics.selectionAsync();
+            }}
+          >
+            {!isPremium && <Feather name="lock" size={11} color={Colors.textMuted} />}
+            <Feather name="map-pin" size={12} color={filterVoivodeship !== "all" ? Colors.black : Colors.textSecondary} />
+            <Text style={[styles.filterChipText, (filterVoivodeship !== "all" || filterCity !== "all") && styles.filterChipTextActive]}>
+              {filterCity !== "all" ? filterCity : filterVoivodeship !== "all" ? filterVoivodeship : "Lokalizacja"}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
       <View style={styles.cardArea}>
         {displayStack.length === 0 ? (
           <Animated.View entering={FadeIn} style={styles.emptyState}>
@@ -458,10 +509,63 @@ export default function DiscoverScreen() {
         )}
       </View>
 
-      <Pressable style={[styles.boostFab, { bottom: insets.bottom + 70 }]} onPress={() => setShowBoosts(true)}>
-        <Text style={styles.boostFabIcon}>⚡</Text>
-        <Text style={styles.boostFabText}>Ulepszenia</Text>
-      </Pressable>
+      <Modal visible={showLocationFilter} transparent animationType="slide" onRequestClose={() => setShowLocationFilter(false)}>
+        <View style={styles.boostOverlay}>
+          <View style={styles.boostModal}>
+            <View style={styles.boostModalHeader}>
+              <Text style={styles.boostModalTitle}>Filtr lokalizacji</Text>
+              <Pressable onPress={() => setShowLocationFilter(false)}>
+                <Feather name="x" size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.boostList} showsVerticalScrollIndicator={false}>
+              <Text style={styles.locFilterLabel}>Województwo</Text>
+              <Pressable
+                style={[styles.locFilterItem, filterVoivodeship === "all" && styles.locFilterItemActive]}
+                onPress={() => { setFilterVoivodeship("all"); setFilterCity("all"); setCardStack([]); refetch(); Haptics.selectionAsync(); }}
+              >
+                <Text style={[styles.locFilterItemText, filterVoivodeship === "all" && styles.locFilterItemTextActive]}>Wszystkie</Text>
+              </Pressable>
+              <View style={styles.locFilterGrid}>
+                {VOIVODESHIP_NAMES.map(v => (
+                  <Pressable
+                    key={v}
+                    style={[styles.locFilterItem, filterVoivodeship === v && styles.locFilterItemActive]}
+                    onPress={() => { setFilterVoivodeship(v); setFilterCity("all"); setCardStack([]); refetch(); Haptics.selectionAsync(); }}
+                  >
+                    <Text style={[styles.locFilterItemText, filterVoivodeship === v && styles.locFilterItemTextActive]}>{v}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {filterVoivodeship !== "all" && (
+                <>
+                  <Text style={[styles.locFilterLabel, { marginTop: 16 }]}>Miasto</Text>
+                  <Pressable
+                    style={[styles.locFilterItem, filterCity === "all" && styles.locFilterItemActive]}
+                    onPress={() => { setFilterCity("all"); setCardStack([]); refetch(); Haptics.selectionAsync(); }}
+                  >
+                    <Text style={[styles.locFilterItemText, filterCity === "all" && styles.locFilterItemTextActive]}>Wszystkie w {filterVoivodeship}</Text>
+                  </Pressable>
+                  <View style={styles.locFilterGrid}>
+                    {(VOIVODESHIPS[filterVoivodeship] || []).map(c => (
+                      <Pressable
+                        key={c}
+                        style={[styles.locFilterItem, filterCity === c && styles.locFilterItemActive]}
+                        onPress={() => { setFilterCity(c); setCardStack([]); refetch(); Haptics.selectionAsync(); }}
+                      >
+                        <Text style={[styles.locFilterItemText, filterCity === c && styles.locFilterItemTextActive]}>{c}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+            <Pressable style={styles.locFilterDoneBtn} onPress={() => setShowLocationFilter(false)}>
+              <Text style={styles.locFilterDoneBtnText}>Gotowe</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={showBoosts} transparent animationType="slide" onRequestClose={() => setShowBoosts(false)}>
         <View style={styles.boostOverlay}>
@@ -738,9 +842,24 @@ const styles = StyleSheet.create({
   boostBadgeCardIcon: { fontSize: 12 },
   boostBadgeCardText: { fontFamily: "Montserrat_700Bold", fontSize: 10, color: "#000", letterSpacing: 1 },
 
-  boostFab: { position: "absolute", bottom: 18, left: 20, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,215,0,0.15)", borderWidth: 1, borderColor: "rgba(255,215,0,0.4)", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 24, zIndex: 50 },
-  boostFabIcon: { fontSize: 16 },
-  boostFabText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: "#FFD700" },
+  filtersBar: { paddingBottom: 6 },
+  filtersScroll: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
+  boostBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,215,0,0.15)", borderWidth: 1, borderColor: "rgba(255,215,0,0.4)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+  boostBtnIcon: { fontSize: 14 },
+  boostBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 12, color: "#FFD700" },
+  filterDivider: { width: 1, height: 20, backgroundColor: Colors.border },
+  filterChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cardBg },
+  filterChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent },
+  filterChipText: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textSecondary },
+  filterChipTextActive: { color: Colors.black },
+  locFilterLabel: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.textPrimary, marginBottom: 8 },
+  locFilterGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  locFilterItem: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cardBg, marginBottom: 2 },
+  locFilterItemActive: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.15)" },
+  locFilterItemText: { fontFamily: "Montserrat_500Medium", fontSize: 12, color: Colors.textSecondary },
+  locFilterItemTextActive: { color: Colors.accent, fontFamily: "Montserrat_600SemiBold" },
+  locFilterDoneBtn: { marginHorizontal: 16, marginBottom: 20, marginTop: 8, backgroundColor: Colors.accent, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
+  locFilterDoneBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 15, color: Colors.black },
 
   boostOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   boostModal: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "80%", borderWidth: 1, borderColor: Colors.border },

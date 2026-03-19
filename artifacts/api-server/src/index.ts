@@ -18,10 +18,12 @@ interface Peer {
   name?: string;
   age?: number;
   city?: string;
+  gender?: string;
   photoUrl?: string;
   filterAgeMin?: number;
   filterAgeMax?: number;
   filterCity?: string;
+  filterGender?: string;
   partnerId?: string;
   peerId: string;
   peerJsId?: string;
@@ -59,7 +61,9 @@ function findMatch(seeker: Peer): Peer | undefined {
       ? (seeker.age ?? 99) >= candidate.filterAgeMin && (seeker.age ?? 0) <= candidate.filterAgeMax : true;
     const seekerWantsCity = seeker.filterCity && seeker.filterCity !== "all" ? candidate.city === seeker.filterCity : true;
     const candidateWantsCity = candidate.filterCity && candidate.filterCity !== "all" ? seeker.city === candidate.filterCity : true;
-    if (seekerWantsAge && candidateWantsAge && seekerWantsCity && candidateWantsCity) return candidate;
+    const seekerWantsGender = seeker.filterGender && seeker.filterGender !== "all" ? candidate.gender === seeker.filterGender : true;
+    const candidateWantsGender = candidate.filterGender && candidate.filterGender !== "all" ? seeker.gender === candidate.filterGender : true;
+    if (seekerWantsAge && candidateWantsAge && seekerWantsCity && candidateWantsCity && seekerWantsGender && candidateWantsGender) return candidate;
   }
   return undefined;
 }
@@ -122,10 +126,12 @@ wss.on("connection", (ws) => {
         peer.age = msg.age as number;
         peer.city = msg.city as string;
         peer.photoUrl = (msg.photoUrl as string) ?? undefined;
+        peer.gender = (msg.gender as string) ?? undefined;
         peer.peerJsId = (msg.peerJsId as string) ?? undefined;
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? undefined;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? undefined;
         peer.filterCity = (msg.filterCity as string) ?? undefined;
+        peer.filterGender = (msg.filterGender as string) ?? undefined;
         waiting.set(peerId, peer);
         sendTo(peer, { type: "waiting", peerId });
         const match = findMatch(peer);
@@ -158,6 +164,7 @@ wss.on("connection", (ws) => {
         peer.filterAgeMin = (msg.filterAgeMin as number) ?? peer.filterAgeMin;
         peer.filterAgeMax = (msg.filterAgeMax as number) ?? peer.filterAgeMax;
         peer.filterCity = (msg.filterCity as string) ?? peer.filterCity;
+        peer.filterGender = (msg.filterGender as string) ?? peer.filterGender;
         waiting.set(peerId, peer);
         sendTo(peer, { type: "waiting", peerId });
         const match2 = findMatch(peer);

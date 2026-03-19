@@ -12,6 +12,8 @@ export const usersTable = pgTable("users", {
   photos: text("photos").array(),
   isPremium: boolean("is_premium").notNull().default(false),
   city: text("city"),
+  voivodeship: text("voivodeship"),
+  gender: text("gender"),
   interests: text("interests").array(),
   passwordHash: text("password_hash"),
   lat: real("lat"),

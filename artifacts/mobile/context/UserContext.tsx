@@ -25,6 +25,8 @@ export interface UserProfile {
   photos?: string[];
   isPremium: boolean;
   city?: string;
+  voivodeship?: string;
+  gender?: string;
   interests?: string[];
   lat?: number | null;
   lng?: number | null;

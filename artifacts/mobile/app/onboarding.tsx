@@ -21,13 +21,19 @@ import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
+import { VOIVODESHIPS, VOIVODESHIP_NAMES } from "@/constants/poland";
 
 const INTERESTS_OPTIONS = [
   "muzyka", "podróże", "sport", "gotowanie", "sztuka", "tech",
   "kino", "literatura", "fitness", "fotografia", "gaming", "yoga",
 ];
-const CITIES = ["Warszawa", "Kraków", "Wrocław", "Poznań", "Gdańsk", "Łódź", "Katowice"];
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
+
+const GENDER_OPTIONS = [
+  { id: "male", label: "Mężczyzna", icon: "👨" },
+  { id: "female", label: "Kobieta", icon: "👩" },
+  { id: "other", label: "Inna", icon: "🌈" },
+];
 
 async function uploadImageBase64(base64: string, mimeType: string): Promise<string> {
   const uploadUrl = process.env.EXPO_PUBLIC_DOMAIN
@@ -52,6 +58,8 @@ export default function OnboardingScreen() {
 
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
+  const [voivodeship, setVoivodeship] = useState("");
   const [city, setCity] = useState("");
   const [username, setUsername] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
@@ -109,11 +117,12 @@ export default function OnboardingScreen() {
   };
 
   const canNext = () => {
-    if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80;
-    if (step === 1) return username.length >= 3 && usernameStatus === "available";
-    if (step === 2) return bio.trim().length >= 20;
-    if (step === 3) return true;
-    if (step === 4) return password.length >= 6 && password === confirmPassword;
+    if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80 && gender.length > 0;
+    if (step === 1) return voivodeship.length > 0 && city.length > 0;
+    if (step === 2) return username.length >= 3 && usernameStatus === "available";
+    if (step === 3) return bio.trim().length >= 20;
+    if (step === 4) return true;
+    if (step === 5) return password.length >= 6 && password === confirmPassword;
     return true;
   };
 
@@ -134,7 +143,9 @@ export default function OnboardingScreen() {
         bio: bio.trim(),
         photoUrl: finalPhotoUrl,
         photos: [],
-        city: city || undefined,
+        city,
+        voivodeship,
+        gender,
         interests,
         password,
       });
@@ -144,6 +155,8 @@ export default function OnboardingScreen() {
       Alert.alert("Błąd rejestracji", (e as Error).message || "Spróbuj ponownie.");
     } finally { setLoading(false); }
   };
+
+  const citiesForVoivodeship = voivodeship ? VOIVODESHIPS[voivodeship] || [] : [];
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -167,20 +180,62 @@ export default function OnboardingScreen() {
               <TextInput style={styles.input} placeholder="Twoje imię..." placeholderTextColor={Colors.textMuted} value={name} onChangeText={setName} maxLength={30} autoFocus />
               <Text style={styles.label}>Wiek</Text>
               <TextInput style={styles.input} placeholder="Ile masz lat?" placeholderTextColor={Colors.textMuted} value={age} onChangeText={setAge} keyboardType="number-pad" maxLength={2} />
-              <Text style={styles.label}>Miasto (opcjonalnie)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.tagsRow}>
-                  {CITIES.map(c => (
-                    <Pressable key={c} style={[styles.tag, city === c && styles.tagActive]} onPress={() => { setCity(c); Haptics.selectionAsync(); }}>
-                      <Text style={[styles.tagText, city === c && styles.tagTextActive]}>{c}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
+              <Text style={styles.label}>Płeć</Text>
+              <View style={styles.genderRow}>
+                {GENDER_OPTIONS.map(g => (
+                  <Pressable
+                    key={g.id}
+                    style={[styles.genderOption, gender === g.id && styles.genderOptionActive]}
+                    onPress={() => { setGender(g.id); Haptics.selectionAsync(); }}
+                  >
+                    <Text style={styles.genderIcon}>{g.icon}</Text>
+                    <Text style={[styles.genderLabel, gender === g.id && styles.genderLabelActive]}>{g.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </Animated.View>
           )}
 
           {step === 1 && (
+            <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
+              <Text style={styles.stepTitle}>Skąd jesteś?</Text>
+              <Text style={styles.stepSub}>Wybierz województwo, a potem miasto.</Text>
+              <Text style={styles.label}>Województwo</Text>
+              <ScrollView style={styles.locationList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <View style={styles.locationGrid}>
+                  {VOIVODESHIP_NAMES.map(v => (
+                    <Pressable
+                      key={v}
+                      style={[styles.locationItem, voivodeship === v && styles.locationItemActive]}
+                      onPress={() => { setVoivodeship(v); setCity(""); Haptics.selectionAsync(); }}
+                    >
+                      <Text style={[styles.locationItemText, voivodeship === v && styles.locationItemTextActive]}>{v}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+              {voivodeship ? (
+                <>
+                  <Text style={[styles.label, { marginTop: 12 }]}>Miasto w woj. {voivodeship}</Text>
+                  <ScrollView style={styles.cityList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                    <View style={styles.locationGrid}>
+                      {citiesForVoivodeship.map(c => (
+                        <Pressable
+                          key={c}
+                          style={[styles.locationItem, city === c && styles.locationItemActive]}
+                          onPress={() => { setCity(c); Haptics.selectionAsync(); }}
+                        >
+                          <Text style={[styles.locationItemText, city === c && styles.locationItemTextActive]}>{c}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              ) : null}
+            </Animated.View>
+          )}
+
+          {step === 2 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twój nick</Text>
               <Text style={styles.stepSub}>Inni znajdą Cię po tej nazwie.</Text>
@@ -208,7 +263,7 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {step === 2 && (
+          {step === 3 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Twoje bio</Text>
               <Text style={styles.stepSub}>Co chcesz, żeby wiedział o Tobie świat?</Text>
@@ -218,7 +273,7 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Zdjęcie i tagi</Text>
               <Text style={styles.stepSub}>Wybierz zdjęcie profilowe i zainteresowania.</Text>
@@ -254,7 +309,7 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <Animated.View entering={FadeInDown.springify()} style={styles.stepBox}>
               <Text style={styles.stepTitle}>Ustaw hasło</Text>
               <Text style={styles.stepSub}>Zabezpiecz swoje konto VIBE.</Text>
@@ -290,7 +345,8 @@ export default function OnboardingScreen() {
               <View style={styles.summaryBox}>
                 <Text style={styles.summaryTitle}>Podsumowanie</Text>
                 <Text style={styles.summaryName}>{name}, {age} • @{username}</Text>
-                {city ? <Text style={styles.summaryCity}>📍 {city}</Text> : null}
+                <Text style={styles.summaryCity}>📍 {city}, {voivodeship}</Text>
+                <Text style={styles.summaryGender}>{GENDER_OPTIONS.find(g => g.id === gender)?.icon} {GENDER_OPTIONS.find(g => g.id === gender)?.label}</Text>
                 <Text style={styles.summaryBio} numberOfLines={2}>{bio}</Text>
               </View>
             </Animated.View>
@@ -330,7 +386,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingBottom: 8, paddingTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   logo: { fontFamily: "Montserrat_700Bold", fontSize: 28, color: Colors.accent, letterSpacing: 4 },
   stepsRow: { flexDirection: "row", gap: 6 },
-  stepDot: { width: 18, height: 4, borderRadius: 2, backgroundColor: Colors.border },
+  stepDot: { width: 14, height: 4, borderRadius: 2, backgroundColor: Colors.border },
   stepDotActive: { backgroundColor: Colors.accent },
   content: { paddingHorizontal: 20, paddingBottom: 20 },
   stepBox: { gap: 12, paddingTop: 16 },
@@ -349,7 +405,6 @@ const styles = StyleSheet.create({
   errorText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.danger },
   successText: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: "#00DC82" },
   usernameHint: { fontFamily: "Montserrat_400Regular", fontSize: 12, color: Colors.textMuted },
-  tagsRow: { flexDirection: "row", gap: 8, paddingBottom: 4 },
   interestsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tag: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cardBg },
   tagActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
@@ -368,10 +423,24 @@ const styles = StyleSheet.create({
   summaryTitle: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
   summaryName: { fontFamily: "Montserrat_700Bold", fontSize: 17, color: Colors.textPrimary },
   summaryCity: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary },
+  summaryGender: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary },
   summaryBio: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 12 },
   backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: Colors.border },
   nextBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: Colors.accent, borderRadius: 14, paddingVertical: 16 },
   nextBtnDisabled: { opacity: 0.35 },
   nextBtnText: { fontFamily: "Montserrat_700Bold", fontSize: 16, color: Colors.black },
+  genderRow: { flexDirection: "row", gap: 10 },
+  genderOption: { flex: 1, alignItems: "center", gap: 6, paddingVertical: 16, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cardBg },
+  genderOptionActive: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.1)" },
+  genderIcon: { fontSize: 28 },
+  genderLabel: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.textSecondary },
+  genderLabelActive: { color: Colors.accent },
+  locationList: { maxHeight: 180 },
+  cityList: { maxHeight: 160 },
+  locationGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 4 },
+  locationItem: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cardBg },
+  locationItemActive: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.1)" },
+  locationItemText: { fontFamily: "Montserrat_500Medium", fontSize: 13, color: Colors.textSecondary },
+  locationItemTextActive: { color: Colors.accent },
 });

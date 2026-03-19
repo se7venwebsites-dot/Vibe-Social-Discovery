@@ -158,6 +158,7 @@ export default function VideoScreen() {
   const [filterAgeMin, setFilterAgeMin] = useState(18);
   const [filterAgeMax, setFilterAgeMax] = useState(40);
   const [filterCity, setFilterCity] = useState("all");
+  const [filterGender, setFilterGender] = useState("all");
   const [activeCamFilter, setActiveCamFilter] = useState("none");
   const [showCamFilters, setShowCamFilters] = useState(false);
 
@@ -279,6 +280,8 @@ export default function VideoScreen() {
             filterAgeMin,
             filterAgeMax,
             filterCity,
+            filterGender,
+            gender: currentUser?.gender,
           }));
         };
 
@@ -320,7 +323,7 @@ export default function VideoScreen() {
         : "Nie udało się uruchomić kamery.");
       setStatus("error");
     }
-  }, [currentUser, filterAgeMin, filterAgeMax, filterCity, connectWithPeerJs, handlePartnerDisconnect, cleanup]);
+  }, [currentUser, filterAgeMin, filterAgeMax, filterCity, filterGender, connectWithPeerJs, handlePartnerDisconnect, cleanup]);
 
   const handleNext = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -343,7 +346,7 @@ export default function VideoScreen() {
       });
       peer.on("open", (myPeerId: string) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "next", peerJsId: myPeerId, filterAgeMin, filterAgeMax, filterCity }));
+          wsRef.current.send(JSON.stringify({ type: "next", peerJsId: myPeerId, filterAgeMin, filterAgeMax, filterCity, filterGender }));
         }
         peer.on("call", (call: any) => {
           activeCallRef.current = call;
@@ -357,7 +360,7 @@ export default function VideoScreen() {
       });
     };
     createNewPeer();
-  }, [filterAgeMin, filterAgeMax, filterCity, handlePartnerDisconnect]);
+  }, [filterAgeMin, filterAgeMax, filterCity, filterGender, handlePartnerDisconnect]);
 
   const handleDisconnect = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -445,6 +448,25 @@ export default function VideoScreen() {
               </Pressable>
             ))}
           </View>
+          <Text style={[styles.filterLabel, { marginTop: 12 }]}>Płeć</Text>
+          <View style={styles.ageRow}>
+            {[
+              { id: "all", label: "Wszyscy" },
+              { id: "male", label: "👨 Mężczyzna" },
+              { id: "female", label: "👩 Kobieta" },
+              { id: "other", label: "🌈 Inna" },
+            ].map(g => (
+              <Pressable
+                key={g.id}
+                style={[styles.ageTag, filterGender === g.id && styles.ageTagActive]}
+                onPress={() => { setFilterGender(g.id); Haptics.selectionAsync(); }}
+              >
+                <Text style={[styles.ageTagText, filterGender === g.id && styles.ageTagTextActive]}>
+                  {g.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <Text style={[styles.filterLabel, { marginTop: 12 }]}>Miasto</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.cityRow}>
@@ -515,6 +537,7 @@ export default function VideoScreen() {
                   <ActivityIndicator color={Colors.accent} size="large" />
                   <Text style={styles.waitingText}>Szukam rozmówcy...</Text>
                   <Text style={styles.waitingSubText}>
+                    {filterGender !== "all" ? `${filterGender === "male" ? "👨" : filterGender === "female" ? "👩" : "🌈"} • ` : ""}
                     {filterCity !== "all" ? `📍 ${filterCity} • ` : ""}
                     {filterAgeMin}–{filterAgeMax} lat
                   </Text>

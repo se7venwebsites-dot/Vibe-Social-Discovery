@@ -33,14 +33,16 @@ artifacts-monorepo/
 ```
 
 ## VIBE App Features
-- **Auth**: 3-step onboarding (name/age/city → bio → interests), persisted via AsyncStorage
-- **Swipe**: Unlimited swipes with PanResponder + Reanimated animations + paid boosts
+- **Auth**: 6-step onboarding (name/age/gender → voivodeship/city → username → bio → photo/interests → password), persisted via AsyncStorage
+- **Gender**: male/female/other — selected during registration, used for filtering in swipe and omegle
+- **Location**: 16 voivodeships with 10 cities each — selected during registration (voivodeship→city picker)
+- **Swipe**: Unlimited swipes with PanResponder + Reanimated animations + paid boosts + filter bar (gender free, location premium-only)
 - **Boosts**: Spotlight (5min first in swipe, 4.99zł), Attention (notification to chosen user, 4.99zł), Super Like (special like with animation, 2.99zł), Incognito (15min anonymous browsing, 3.99zł), Mega Boost (30min top + highlighted, 9.99zł)
 - **Likes tab**: Blurred for free users, paywall to unlock
 - **Messages tab**: Matches list with blur paywall for free users  
 - **Swipe Messages**: When swiping right, user can optionally send one message. Recipient sees it in matches tab — but can only view content/reply if mutual match or premium
 - **Chat screen**: Full real-time chat (polling every 4s) with premium paywall
-- **Video tab**: Omegle-like WebRTC video chat with filters (age range, city) — web only
+- **Video tab**: Omegle-like WebRTC video chat with filters (age range, city, gender) — web only
 - **Profile tab**: Full editing (name/age/city/bio/interests) + DEV buttons
 - **Premium**: Modal paywall at 24,99 PLN/week (simulated)
 - **Design**: Dark #000000, neon yellow #CCFF00, Montserrat font
