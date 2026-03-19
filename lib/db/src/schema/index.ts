@@ -5,3 +5,6 @@ export * from "./messages";
 export * from "./friend_requests";
 export * from "./lives";
 export * from "./boosts";
+export * from "./stories";
+export * from "./reports";
+export * from "./blocks";

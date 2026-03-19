@@ -33,18 +33,24 @@ artifacts-monorepo/
 ```
 
 ## VIBE App Features
-- **Auth**: 6-step onboarding (name/age/gender → voivodeship/city → username → bio → photo/interests → password), persisted via AsyncStorage
+- **Auth**: 6-step onboarding (name/age/gender → voivodeship/city → username → bio → photo/interests → password), persisted via AsyncStorage. Step 0 requires accepting Terms & Privacy Policy.
 - **Gender**: male/female/other — selected during registration, used for filtering in swipe and omegle
 - **Location**: 16 voivodeships with 10 cities each — selected during registration (voivodeship→city picker)
 - **Swipe**: Unlimited swipes with PanResponder + Reanimated animations + paid boosts + filter bar (gender free, location premium-only)
-- **Boosts**: Spotlight (5min first in swipe, 4.99zł), Attention (notification to chosen user, 4.99zł), Super Like (special like with animation, 2.99zł), Incognito (15min anonymous browsing, 3.99zł), Mega Boost (30min top + highlighted, 9.99zł)
+- **Boosts**: Spotlight (5min first in swipe, 4.99zł), Attention (notification to chosen user, 4.99zł), Super Like (special like with animation, 2.99zł), Drugie Szanse (restore last 5 left-swiped profiles, 3.99zł), Mega Boost (30min top + highlighted, 9.99zł)
 - **Likes tab**: Blurred for free users, paywall to unlock
-- **Messages tab**: Matches list with blur paywall for free users  
+- **Messages tab**: Matches list with blur paywall for free users + Stories bar at top
 - **Swipe Messages**: When swiping right, user can optionally send one message. Recipient sees it in matches tab — but can only view content/reply if mutual match or premium
-- **Chat screen**: Full real-time chat (polling every 4s) with premium paywall
+- **Chat screen**: Full real-time chat (polling every 4s) with premium paywall. Supports photo messages (image picker), voice messages (recording + waveform player), full-screen image preview. Report modal (6 reasons) and block functionality via ⋮ menu.
+- **Stories**: 24h expiry stories with StoriesBar component, fullscreen viewer with progress bar, add/view stories. Feed includes own user + friends + matches.
 - **Video tab**: Omegle-like WebRTC video chat with filters (age range, city, gender) — web only
 - **Profile tab**: Full editing (name/age/city/bio/interests) + DEV buttons
+- **User Profile**: View other users' profiles with stats, photos, friend request, report & block buttons
 - **Premium**: Modal paywall at 24,99 PLN/week (simulated)
+- **Report/Block**: Report modal with 6 reasons (Spam, Nękanie, Treści nieodpowiednie, Fałszywy profil, Nieletni, Inne). Block functionality removes users from all feeds (swipe, matches, map, likes).
+- **Match-to-Friends**: When matched users exchange messages, they are auto-promoted to friends (accepted friend request created automatically)
+- **Push Notifications**: Expo push notifications for new messages, likes, and matches (native only). Push tokens saved on login.
+- **Terms & Privacy**: regulamin.tsx and polityka-prywatnosci.tsx pages, required checkbox in onboarding
 - **Design**: Dark #000000, neon yellow #CCFF00, Montserrat font
 
 ## WebSocket Signaling Server
@@ -62,10 +68,16 @@ artifacts-monorepo/
 - **Live stream grey screen**: Fixed by ICE buffering; viewer PC is reused on renegotiation offers (not recreated)
 
 ## DB Tables
-- `users`: id, name, age, bio, photo_url, is_premium, city, interests[]
+- `users`: id, name, age, bio, photo_url, is_premium, city, interests[], accepted_terms, push_token
 - `likes`: from_user_id, to_user_id, action (like/dislike)
 - `matches`: user1_id, user2_id (created on mutual like)
-- `messages`: sender_id, receiver_id, content, is_read
+- `messages`: sender_id, receiver_id, content, is_read, type (text/photo/voice), media_url
+- `stories`: id, user_id, media_url, type (photo/text), text, created_at, expires_at (24h)
+- `reports`: id, from_user_id, reported_user_id, reason, details, created_at
+- `blocks`: id, user_id, blocked_user_id, created_at
+- `friend_requests`: id, from_user_id, to_user_id, status (pending/accepted/declined)
+- `boosts`: id, user_id, type, expires_at
+- `lives`: id, host_id, title, is_active
 
 ## TypeScript & Composite Projects
 

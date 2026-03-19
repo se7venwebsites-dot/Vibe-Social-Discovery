@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 function ChatTabIcon({ color, focused }: { color: string; focused: boolean }) {
   const { currentUser } = useUserContext();
@@ -55,8 +56,9 @@ function ChatTabIcon({ color, focused }: { color: string; focused: boolean }) {
 }
 
 export default function TabLayout() {
-  const { isRegistered, isLoadingAuth } = useUserContext();
+  const { isRegistered, isLoadingAuth, currentUser } = useUserContext();
   const isIOS = Platform.OS === "ios";
+  usePushNotifications(currentUser?.id);
 
   useEffect(() => {
     if (!isLoadingAuth && !isRegistered) {

@@ -7,6 +7,8 @@ export const messagesTable = pgTable("messages", {
   senderId: integer("sender_id").notNull(),
   receiverId: integer("receiver_id").notNull(),
   content: text("content").notNull(),
+  type: text("type").notNull().default("text"),
+  mediaUrl: text("media_url"),
   isRead: boolean("is_read").notNull().default(false),
   isSwipeMessage: boolean("is_swipe_message").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, likesTable, friendRequestsTable, boostsTable } from "@workspace/db";
+import { db, usersTable, likesTable, friendRequestsTable, boostsTable, blocksTable } from "@workspace/db";
 import { eq, and, notInArray, isNotNull, or, count, gt, inArray } from "drizzle-orm";
 import { CITY_COORDS } from "./auth";
 
@@ -30,7 +30,13 @@ router.get("/users", async (req, res) => {
 
   const alreadySwiped = await db.select({ toUserId: likesTable.toUserId }).from(likesTable).where(eq(likesTable.fromUserId, currentUserId));
   const swipedIds = alreadySwiped.map(r => r.toUserId);
-  const exclude = [currentUserId, ...swipedIds];
+
+  const blocks = await db.select().from(blocksTable).where(
+    or(eq(blocksTable.userId, currentUserId), eq(blocksTable.blockedUserId, currentUserId))
+  );
+  const blockedIds = blocks.map(b => b.userId === currentUserId ? b.blockedUserId : b.userId);
+
+  const exclude = [currentUserId, ...swipedIds, ...blockedIds];
 
   const now = new Date();
   const spotlightBoosts = await db.select({ userId: boostsTable.userId }).from(boostsTable).where(
@@ -69,6 +75,15 @@ router.get("/users/by-username/:username", async (req, res) => {
 });
 
 router.get("/users/map", async (req, res) => {
+  const currentUserId = parseInt(req.query.currentUserId as string);
+  let blockedIds: number[] = [];
+  if (!isNaN(currentUserId)) {
+    const blocks = await db.select().from(blocksTable).where(
+      or(eq(blocksTable.userId, currentUserId), eq(blocksTable.blockedUserId, currentUserId))
+    );
+    blockedIds = blocks.map(b => b.userId === currentUserId ? b.blockedUserId : b.userId);
+  }
+
   const users = await db.select({
     id: usersTable.id,
     name: usersTable.name,
@@ -82,7 +97,9 @@ router.get("/users/map", async (req, res) => {
   }).from(usersTable).where(
     and(isNotNull(usersTable.lat), isNotNull(usersTable.lng))
   ).limit(200);
-  res.json(users);
+
+  const filtered = blockedIds.length > 0 ? users.filter(u => !blockedIds.includes(u.id)) : users;
+  res.json(filtered);
 });
 
 router.post("/users/:id/location", async (req, res) => {
@@ -195,6 +212,14 @@ router.patch("/users/:id", async (req, res) => {
   const [updated] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "User not found" }); return; }
   res.json(toUserDto(updated));
+});
+
+router.post("/users/:id/push-token", async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { pushToken } = req.body;
+  if (isNaN(id) || !pushToken) { res.status(400).json({ error: "invalid" }); return; }
+  await db.update(usersTable).set({ pushToken }).where(eq(usersTable.id, id));
+  res.json({ success: true });
 });
 
 export default router;

@@ -10,6 +10,8 @@ import livesRouter from "./lives";
 import authRouter from "./auth";
 import iceServersRouter from "./ice-servers";
 import boostsRouter from "./boosts";
+import storiesRouter from "./stories";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -24,5 +26,7 @@ router.use(friendsRouter);
 router.use(livesRouter);
 router.use(iceServersRouter);
 router.use(boostsRouter);
+router.use(storiesRouter);
+router.use(reportsRouter);
 
 export default router;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +19,15 @@ import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
+
+const REPORT_REASONS = [
+  "Spam lub reklama",
+  "Nękanie lub zastraszanie",
+  "Treści nieodpowiednie",
+  "Fałszywy profil",
+  "Nieletni",
+  "Inne",
+];
 
 interface UserProfile {
   id: number;
@@ -55,6 +65,7 @@ export default function UserProfileScreen() {
   const { currentUser } = useUserContext();
   const queryClient = useQueryClient();
   const [photoViewIdx, setPhotoViewIdx] = useState<number | null>(null);
+  const [showReport, setShowReport] = useState(false);
 
   const isOwnProfile = currentUser?.id === Number(id);
 
@@ -120,6 +131,60 @@ export default function UserProfileScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(`/chat/${id}` as any);
   };
+
+  const handleReport = useCallback(async (reason: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`${BASE_URL}/reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromUserId: currentUser.id, reportedUserId: Number(id), reason }),
+      });
+      setShowReport(false);
+      if (res.ok) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (Platform.OS === "web") window.alert("Zgłoszenie wysłane. Dziękujemy!");
+      } else {
+        if (Platform.OS === "web") window.alert("Nie udało się wysłać zgłoszenia.");
+      }
+    } catch {
+      setShowReport(false);
+      if (Platform.OS === "web") window.alert("Błąd sieci. Spróbuj ponownie.");
+    }
+  }, [currentUser, id]);
+
+  const handleBlock = useCallback(async () => {
+    if (!currentUser) return;
+    const msg = "Czy na pewno chcesz zablokować tę osobę?";
+    let confirmed = false;
+    if (Platform.OS === "web") {
+      confirmed = window.confirm(msg);
+    } else {
+      confirmed = await new Promise(resolve => {
+        const { Alert } = require("react-native");
+        Alert.alert("Zablokuj", msg, [
+          { text: "Anuluj", style: "cancel", onPress: () => resolve(false) },
+          { text: "Zablokuj", style: "destructive", onPress: () => resolve(true) },
+        ]);
+      });
+    }
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${BASE_URL}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, blockedUserId: Number(id) }),
+      });
+      if (res.ok) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        router.back();
+      } else {
+        if (Platform.OS === "web") window.alert("Nie udało się zablokować użytkownika.");
+      }
+    } catch {
+      if (Platform.OS === "web") window.alert("Błąd sieci. Spróbuj ponownie.");
+    }
+  }, [currentUser, id, router]);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
@@ -291,9 +356,38 @@ export default function UserProfileScreen() {
                 <Text style={styles.friendStatusText}>Zaproszenie oczekuje</Text>
               </View>
             )}
+
+            <View style={styles.dangerRow}>
+              <Pressable style={styles.reportBtn} onPress={() => setShowReport(true)}>
+                <Feather name="flag" size={16} color={Colors.danger} />
+                <Text style={styles.reportBtnText}>Zgłoś</Text>
+              </Pressable>
+              <Pressable style={styles.blockBtn} onPress={handleBlock}>
+                <Feather name="slash" size={16} color={Colors.danger} />
+                <Text style={styles.reportBtnText}>Zablokuj</Text>
+              </Pressable>
+            </View>
           </Animated.View>
         )}
       </ScrollView>
+
+      <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
+        <View style={styles.reportOverlay}>
+          <Animated.View entering={FadeInDown.springify()} style={styles.reportBox}>
+            <Text style={styles.reportTitle}>Zgłoś użytkownika</Text>
+            <Text style={styles.reportSub}>Dlaczego chcesz zgłosić {user?.name ?? "tę osobę"}?</Text>
+            {REPORT_REASONS.map(reason => (
+              <Pressable key={reason} style={styles.reportReasonBtn} onPress={() => handleReport(reason)}>
+                <Text style={styles.reportReasonText}>{reason}</Text>
+                <Feather name="chevron-right" size={16} color={Colors.textMuted} />
+              </Pressable>
+            ))}
+            <Pressable style={styles.reportCancelBtn} onPress={() => setShowReport(false)}>
+              <Text style={styles.reportCancelText}>Anuluj</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -344,4 +438,16 @@ const styles = StyleSheet.create({
   errorText: { fontFamily: "Montserrat_600SemiBold", fontSize: 16, color: Colors.textSecondary },
   backBtn: { backgroundColor: Colors.surface, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
   backBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 14, color: Colors.textPrimary },
+  dangerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 8 },
+  reportBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,59,48,0.25)" },
+  blockBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,59,48,0.25)" },
+  reportBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 13, color: Colors.danger },
+  reportOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  reportBox: { backgroundColor: Colors.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  reportTitle: { fontFamily: "Montserrat_700Bold", fontSize: 18, color: Colors.textPrimary, textAlign: "center", marginBottom: 4 },
+  reportSub: { fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textMuted, textAlign: "center", marginBottom: 16 },
+  reportReasonBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 12, borderRadius: 12, backgroundColor: Colors.surface, marginBottom: 8 },
+  reportReasonText: { fontFamily: "Montserrat_500Medium", fontSize: 15, color: Colors.textPrimary },
+  reportCancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
+  reportCancelText: { fontFamily: "Montserrat_600SemiBold", fontSize: 15, color: Colors.textMuted },
 });

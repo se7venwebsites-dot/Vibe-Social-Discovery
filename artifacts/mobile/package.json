@@ -57,6 +57,9 @@
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",
+    "expo-audio": "^55.0.9",
+    "expo-av": "^16.0.8",
+    "expo-notifications": "^55.0.13",
     "peerjs": "^1.5.5"
   }
 }

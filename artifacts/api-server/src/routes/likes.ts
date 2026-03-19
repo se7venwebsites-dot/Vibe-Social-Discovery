@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, likesTable, usersTable, matchesTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { db, likesTable, usersTable, matchesTable, blocksTable } from "@workspace/db";
+import { eq, and, or, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -41,6 +41,17 @@ router.post("/likes", async (req, res) => {
   const fId = parseInt(fromUserId);
   const tId = parseInt(toUserId);
 
+  const blockCheck = await db.select({ id: blocksTable.id }).from(blocksTable).where(
+    or(
+      and(eq(blocksTable.userId, fId), eq(blocksTable.blockedUserId, tId)),
+      and(eq(blocksTable.userId, tId), eq(blocksTable.blockedUserId, fId))
+    )
+  );
+  if (blockCheck.length > 0) {
+    res.status(403).json({ error: "Użytkownik jest zablokowany" });
+    return;
+  }
+
   const existing = await db
     .select()
     .from(likesTable)
@@ -58,6 +69,26 @@ router.post("/likes", async (req, res) => {
   let isMatch = false;
   if (action === "like") {
     isMatch = await createMatchIfNeeded(fId, tId);
+
+    try {
+      const [targetUser] = await db.select({ pushToken: usersTable.pushToken }).from(usersTable).where(eq(usersTable.id, tId));
+      const [fromUser] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, fId));
+      if (targetUser?.pushToken && fromUser) {
+        const title = isMatch ? "Nowy match! 🎉" : "Ktoś Cię polubił! 💜";
+        const body = isMatch ? `Ty i ${fromUser.name} macie match!` : "Sprawdź kto Cię polubił";
+        fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: targetUser.pushToken,
+            title,
+            body,
+            data: { type: isMatch ? "match" : "like", fromUserId: fId },
+            sound: "default",
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
   }
 
   res.json({ success: true, isMatch });
@@ -86,17 +117,25 @@ router.post("/matches/friend", async (req, res) => {
 
 router.get("/likes/received/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId);
+
+  const blocks = await db.select().from(blocksTable).where(
+    or(eq(blocksTable.userId, userId), eq(blocksTable.blockedUserId, userId))
+  );
+  const blockedIds = new Set(blocks.map(b => b.userId === userId ? b.blockedUserId : b.userId));
+
   const received = await db
     .select({ fromUserId: likesTable.fromUserId })
     .from(likesTable)
     .where(and(eq(likesTable.toUserId, userId), eq(likesTable.action, "like")));
 
-  if (received.length === 0) {
+  const filteredReceived = received.filter(r => !blockedIds.has(r.fromUserId));
+
+  if (filteredReceived.length === 0) {
     const allUsers = await db
       .select()
       .from(usersTable)
       .limit(50);
-    const others = allUsers.filter((u) => u.id !== userId);
+    const others = allUsers.filter((u) => u.id !== userId && !blockedIds.has(u.id));
     const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 5);
     res.json(
       shuffled.map((u) => ({
@@ -113,7 +152,7 @@ router.get("/likes/received/:userId", async (req, res) => {
     return;
   }
 
-  const fromIds = received.map((r) => r.fromUserId);
+  const fromIds = filteredReceived.map((r) => r.fromUserId);
   const users = await db.select().from(usersTable).where(inArray(usersTable.id, fromIds));
 
   res.json(

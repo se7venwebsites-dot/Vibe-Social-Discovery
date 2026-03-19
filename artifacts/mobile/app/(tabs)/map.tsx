@@ -109,12 +109,12 @@ export default function MapScreen() {
   }, [pathname, requestGeolocation]);
 
   const fetchUsers = useCallback(() => {
-    fetch(`${BASE_URL}/users/map`)
+    fetch(`${BASE_URL}/users/map${currentUser?.id ? `?currentUserId=${currentUser.id}` : ''}`)
       .then(r => r.json())
       .then(data => setUsers(data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (Platform.OS !== "web") return;

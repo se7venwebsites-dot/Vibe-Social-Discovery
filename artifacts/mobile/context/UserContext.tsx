@@ -37,7 +37,7 @@ interface UserContextType {
   isRegistered: boolean;
   isLoadingAuth: boolean;
   isPremium: boolean;
-  register: (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string }) => Promise<void>;
+  register: (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string; acceptedTerms?: boolean }) => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   updateProfile: (data: Partial<Omit<UserProfile, "id" | "isPremium">>) => Promise<void>;
   activatePremium: () => Promise<void>;
@@ -72,7 +72,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     load();
   }, []);
 
-  const register = useCallback(async (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string }) => {
+  const register = useCallback(async (data: Omit<UserProfile, "id" | "isPremium"> & { password?: string; acceptedTerms?: boolean }) => {
     const endpoint = data.password ? `${BASE_URL}/auth/register` : `${BASE_URL}/users/register`;
     const res = await fetch(endpoint, {
       method: "POST",

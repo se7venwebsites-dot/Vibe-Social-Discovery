@@ -1,11 +1,16 @@
 import { Router, type IRouter } from "express";
-import { db, matchesTable, usersTable, messagesTable } from "@workspace/db";
+import { db, matchesTable, usersTable, messagesTable, blocksTable } from "@workspace/db";
 import { eq, or, and, desc, sql, asc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 router.get("/matches/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId);
+
+  const blocks = await db.select().from(blocksTable).where(
+    or(eq(blocksTable.userId, userId), eq(blocksTable.blockedUserId, userId))
+  );
+  const blockedIds = new Set(blocks.map(b => b.userId === userId ? b.blockedUserId : b.userId));
 
   const matches = await db
     .select()
@@ -17,6 +22,7 @@ router.get("/matches/:userId", async (req, res) => {
   const results = await Promise.all(
     matches.map(async (m) => {
       const otherId = m.user1Id === userId ? m.user2Id : m.user1Id;
+      if (blockedIds.has(otherId)) return null;
       const [user] = await db.select().from(usersTable).where(eq(usersTable.id, otherId));
       if (!user) return null;
 

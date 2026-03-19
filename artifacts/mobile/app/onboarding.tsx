@@ -70,6 +70,7 @@ export default function OnboardingScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const topInset = Platform.OS === "web" ? 67 : insets.top;
 
@@ -117,7 +118,7 @@ export default function OnboardingScreen() {
   };
 
   const canNext = () => {
-    if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80 && gender.length > 0;
+    if (step === 0) return name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 18 && parseInt(age) <= 80 && gender.length > 0 && acceptedTerms;
     if (step === 1) return voivodeship.length > 0 && city.length > 0;
     if (step === 2) return username.length >= 3 && usernameStatus === "available";
     if (step === 3) return bio.trim().length >= 20;
@@ -148,6 +149,7 @@ export default function OnboardingScreen() {
         gender,
         interests,
         password,
+        acceptedTerms: true,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)");
@@ -192,6 +194,21 @@ export default function OnboardingScreen() {
                     <Text style={[styles.genderLabel, gender === g.id && styles.genderLabelActive]}>{g.label}</Text>
                   </Pressable>
                 ))}
+              </View>
+
+              <View style={styles.termsRow}>
+                <Pressable
+                  style={[styles.checkbox, acceptedTerms && styles.checkboxActive]}
+                  onPress={() => { setAcceptedTerms(!acceptedTerms); Haptics.selectionAsync(); }}
+                >
+                  {acceptedTerms && <Feather name="check" size={14} color={Colors.black} />}
+                </Pressable>
+                <Text style={styles.termsText}>
+                  Akceptuję{" "}
+                  <Text style={styles.termsLink} onPress={() => router.push("/regulamin" as any)}>Regulamin</Text>
+                  {" "}i{" "}
+                  <Text style={styles.termsLink} onPress={() => router.push("/polityka-prywatnosci" as any)}>Politykę Prywatności</Text>
+                </Text>
               </View>
             </Animated.View>
           )}
@@ -443,4 +460,9 @@ const styles = StyleSheet.create({
   locationItemActive: { borderColor: Colors.accent, backgroundColor: "rgba(204,255,0,0.1)" },
   locationItemText: { fontFamily: "Montserrat_500Medium", fontSize: 13, color: Colors.textSecondary },
   locationItemTextActive: { color: Colors.accent },
+  termsRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: Colors.border, alignItems: "center", justifyContent: "center", marginTop: 1 },
+  checkboxActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  termsText: { flex: 1, fontFamily: "Montserrat_400Regular", fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  termsLink: { color: Colors.accent, fontFamily: "Montserrat_600SemiBold", textDecorationLine: "underline" },
 });

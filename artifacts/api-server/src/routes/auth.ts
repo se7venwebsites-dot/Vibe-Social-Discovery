@@ -39,7 +39,7 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 router.post("/auth/register", async (req, res) => {
-  const { name, username, age, bio, photoUrl, photos, city, voivodeship, gender, interests, password } = req.body;
+  const { name, username, age, bio, photoUrl, photos, city, voivodeship, gender, interests, password, acceptedTerms } = req.body;
   if (!name || !age || !bio) {
     res.status(400).json({ error: "name, age, bio required" });
     return;
@@ -66,6 +66,7 @@ router.post("/auth/register", async (req, res) => {
     gender: gender || null,
     interests: interests || [],
     isPremium: false,
+    acceptedTerms: acceptedTerms === true,
     passwordHash,
     lat: coords?.[0] ?? null,
     lng: coords?.[1] ?? null,

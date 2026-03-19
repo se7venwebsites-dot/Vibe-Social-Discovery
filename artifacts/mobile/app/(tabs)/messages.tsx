@@ -20,6 +20,7 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useUserContext, BASE_URL } from "@/context/UserContext";
 import { PremiumModal } from "@/components/PremiumModal";
+import StoriesBar from "@/components/StoriesBar";
 
 type Tab = "matches" | "friends" | "requests";
 
@@ -142,6 +143,8 @@ export default function MessagesScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}><Text style={styles.title}>Wiadomości</Text></View>
+
+      <StoriesBar />
 
       <View style={styles.tabBar}>
         {(["matches", "friends", "requests"] as Tab[]).map(t => (

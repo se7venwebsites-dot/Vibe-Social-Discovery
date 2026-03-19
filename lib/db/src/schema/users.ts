@@ -16,6 +16,8 @@ export const usersTable = pgTable("users", {
   gender: text("gender"),
   interests: text("interests").array(),
   passwordHash: text("password_hash"),
+  acceptedTerms: boolean("accepted_terms").notNull().default(false),
+  pushToken: text("push_token"),
   lat: real("lat"),
   lng: real("lng"),
   lastLocationUpdate: timestamp("last_location_update"),
