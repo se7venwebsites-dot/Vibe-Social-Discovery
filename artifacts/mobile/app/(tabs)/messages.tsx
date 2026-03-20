@@ -66,9 +66,8 @@ export default function MessagesScreen() {
   const [searchUsername, setSearchUsername] = useState("");
   const [searchResult, setSearchResult] = useState<Friend | null | "not_found">(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  // we explicitly want panel wyzej (higher) when rendering mobile-style web preview
-  // keep minimal safe area and avoid large blank space on top
-  const topInset = Platform.OS === "web" ? 20 : Math.max(insets.top, 20);
+  // we want panel maximum u góry na web/symulatorze, bez dodatkowego spacingu
+  const topInset = Platform.OS === "web" ? 0 : Math.max(insets.top, 20);
 
   const { data: matches = [], isLoading: matchesLoading } = useQuery<Match[]>({
     queryKey: ["matches", currentUser?.id],
