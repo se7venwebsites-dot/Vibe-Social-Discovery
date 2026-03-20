@@ -294,7 +294,7 @@ export default function MessagesScreen() {
                 <Text style={styles.emptyText}>Szukaj po @nicku i dodaj pierwszego znajomego!</Text>
               </View>
             ) : (
-              <FlatList data={friends} keyExtractor={f => String(f.id)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8, gap: 10 }}
+              <FlatList data={friends} keyExtractor={f => String(f.id)} contentContainerStyle={{ paddingBottom: insets.bottom + 20, paddingHorizontal: 16, gap: 10 }}
                 renderItem={({ item: friend, index }) => {
                   const matchItem = matches.find(m => m.id === friend.id);
                   return (
@@ -331,7 +331,7 @@ export default function MessagesScreen() {
             <Text style={styles.emptyText}>Gdy ktoś Cię zaprosi, pojawi się tutaj.</Text>
           </View>
         ) : (
-          <FlatList data={friendRequests} keyExtractor={r => String(r.requestId)} contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8, gap: 10 }}
+          <FlatList data={friendRequests} keyExtractor={r => String(r.requestId)} contentContainerStyle={{ paddingBottom: insets.bottom + 20, paddingHorizontal: 16, gap: 10 }}
             renderItem={({ item: req, index }) => (
               <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.requestCard}>
                 <Image source={{ uri: req.fromUser.photoUrl }} style={styles.avatar} />

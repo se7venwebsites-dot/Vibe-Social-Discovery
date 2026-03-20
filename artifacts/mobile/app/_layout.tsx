@@ -39,14 +39,28 @@ export default function RootLayout() {
     Montserrat_500Medium,
     Montserrat_400Regular,
   });
+  const [shouldShowApp, setShouldShowApp] = React.useState(false);
 
   useEffect(() => {
+    // Show UI quickly with or without fonts
+    // This prevents the app from appearing frozen while fonts load
+    const splashTimer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+      setShouldShowApp(true);
+    }, 800); // Short timeout - show UI quickly with system font fallback
+
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      // If fonts finish loading faster, show immediately
+      clearTimeout(splashTimer);
+      SplashScreen.hideAsync().catch(() => {});
+      setShouldShowApp(true);
     }
+
+    return () => clearTimeout(splashTimer);
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) return null;
+  // Show UI after fonts load OR after timeout - never block the UI
+  if (!shouldShowApp) return null;
 
   return (
     <SafeAreaProvider>

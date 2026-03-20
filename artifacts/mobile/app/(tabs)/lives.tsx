@@ -442,7 +442,7 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   const acceptStageInvite = useCallback(async () => {
     const invite = stageInvite;
     setStageInvite(null);
-    if (!invite || Platform.OS !== "web") return;
+    if (!invite) return;
     try {
       const iceServers = await getIceServers();
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -474,7 +474,6 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
   }, []);
 
   const handleHostOffer = useCallback(async (offer: RTCSessionDescriptionInit, hostWsPeerId: string) => {
-    if (Platform.OS !== "web") return;
     const iceServers = await getIceServers();
     const pc = new RTCPeerConnection({ iceServers } as RTCConfiguration);
     pcRef.current = pc;
@@ -545,7 +544,6 @@ function LiveViewerModal({ live, visible, onClose, currentUser }: {
 
   useEffect(() => {
     if (!visible || !live) return;
-    if (Platform.OS !== "web") return;
 
     pendingIceRef.current = [];
     fetch(`${BASE_URL}/lives/${live.id}/viewers`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delta: 1 }) }).catch(() => {});
@@ -1044,7 +1042,7 @@ function HostBroadcastModal({ live, visible, onClose }: { live: { id: number; ti
   }, []);
 
   useEffect(() => {
-    if (!visible || !live || Platform.OS !== "web") return;
+    if (!visible || !live) return;
 
     setBroadcastError("");
 
