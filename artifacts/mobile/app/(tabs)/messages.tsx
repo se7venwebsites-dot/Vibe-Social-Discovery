@@ -67,7 +67,7 @@ export default function MessagesScreen() {
   const [searchResult, setSearchResult] = useState<Friend | null | "not_found">(null);
   const [searchLoading, setSearchLoading] = useState(false);
   // we want panel maximum u góry na web/symulatorze, bez dodatkowego spacingu
-  const topInset = Platform.OS === "web" ? 0 : Math.max(insets.top, 20);
+  const topInset = Platform.OS === "web" ? 0 : insets.top;
 
   const { data: matches = [], isLoading: matchesLoading } = useQuery<Match[]>({
     queryKey: ["matches", currentUser?.id],
@@ -145,22 +145,12 @@ export default function MessagesScreen() {
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}><Text style={styles.title}>Wiadomości</Text></View>
 
+      <StoriesBar />
       <View style={styles.tabBar}>
         {(["matches", "friends", "requests"] as Tab[]).map(t => (
           <Pressable key={t} style={[styles.tabBtn, tab === t && styles.tabBtnActive]} onPress={() => { setTab(t); Haptics.selectionAsync(); }}>
             {t === "requests" && pendingCount > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{pendingCount}</Text></View>}
             <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>{t === "matches" ? "Matche" : t === "friends" ? "Znajomi" : "Zaproszenia"}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <StoriesBar />
-        {(["matches", "friends", "requests"] as Tab[]).map(t => (
-          <Pressable key={t} style={[styles.tabBtn, tab === t && styles.tabBtnActive]} onPress={() => { setTab(t); Haptics.selectionAsync(); }}>
-            {t === "requests" && pendingCount > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{pendingCount}</Text></View>}
-            <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>
-              {t === "matches" ? "Matche" : t === "friends" ? "Znajomi" : "Zaproszenia"}
-            </Text>
           </Pressable>
         ))}
       </View>
@@ -372,7 +362,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
   header: { paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
-  tabBar: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 10, marginTop: 4 },
+  tabBar: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 10, marginTop: 2 },
   tabBtn: { flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", position: "relative" },
   tabBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   tabBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textSecondary },

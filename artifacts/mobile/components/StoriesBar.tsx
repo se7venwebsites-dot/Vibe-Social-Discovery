@@ -222,7 +222,7 @@ function getTimeAgo(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
-  bar: { paddingHorizontal: 16, paddingVertical: 10, gap: 14, alignItems: "flex-start" },
+  bar: { paddingHorizontal: 16, paddingVertical: 10, gap: 14, alignItems: "flex-start", marginBottom: 8 },
   storyItem: { alignItems: "center", width: 68 },
   storyRing: {
     width: 64,
