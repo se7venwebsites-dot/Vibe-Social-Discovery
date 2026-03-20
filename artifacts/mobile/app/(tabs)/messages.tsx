@@ -67,7 +67,7 @@ export default function MessagesScreen() {
   const [searchResult, setSearchResult] = useState<Friend | null | "not_found">(null);
   const [searchLoading, setSearchLoading] = useState(false);
   // we want panel maximum u góry na web/symulatorze, bez dodatkowego spacingu
-  const topInset = Platform.OS === "web" ? 0 : insets.top;
+  const topInset = Platform.OS === "web" ? 0 : Math.max(insets.top, 6);
 
   const { data: matches = [], isLoading: matchesLoading } = useQuery<Match[]>({
     queryKey: ["matches", currentUser?.id],
@@ -362,8 +362,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.black },
   header: { paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 },
   title: { fontFamily: "Montserrat_700Bold", fontSize: 26, color: Colors.textPrimary },
-  tabBar: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 10, marginTop: 2 },
-  tabBtn: { flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", position: "relative" },
+  tabBar: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 8, marginTop: 0 },
+  tabBtn: { flex: 1, paddingVertical: 8, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: "center", position: "relative" },
   tabBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   tabBtnText: { fontFamily: "Montserrat_600SemiBold", fontSize: 11, color: Colors.textSecondary },
   tabBtnTextActive: { color: Colors.black },
