@@ -66,9 +66,9 @@ export default function MessagesScreen() {
   const [searchUsername, setSearchUsername] = useState("");
   const [searchResult, setSearchResult] = useState<Friend | null | "not_found">(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  // on web we used 67, but it can push content too low on mobile simulation;
-  // use 44 to align better with native header heights (a pillar in iOS/Android)
-  const topInset = Platform.OS === "web" ? 44 : insets.top;
+  // we explicitly want panel wyzej (higher) when rendering mobile-style web preview
+  // keep minimal safe area and avoid large blank space on top
+  const topInset = Platform.OS === "web" ? 20 : Math.max(insets.top, 20);
 
   const { data: matches = [], isLoading: matchesLoading } = useQuery<Match[]>({
     queryKey: ["matches", currentUser?.id],
