@@ -277,7 +277,8 @@ export default function ChatScreen() {
       body: JSON.stringify({ userId: currentUser.id, blockedUserId: otherId }),
     });
     setShowMenu(false);
-    router.back();
+    if (router.canGoBack()) router.back();
+    else router.push("/");
   }, [currentUser, otherId]);
 
   const formatDuration = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
@@ -358,7 +359,7 @@ export default function ChatScreen() {
     >
       <View style={[styles.container, { paddingTop: topInset }]}>
         <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Pressable style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.push("/")}>
             <Feather name="arrow-left" size={20} color={Colors.textPrimary} />
           </Pressable>
           {otherUser && (

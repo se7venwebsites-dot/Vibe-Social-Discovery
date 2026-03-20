@@ -76,7 +76,7 @@ export default function ShopScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.push("/")}>
           <Feather name="arrow-left" size={20} color={Colors.textSecondary} />
         </Pressable>
         <Text style={styles.title}>Sklep monet</Text>

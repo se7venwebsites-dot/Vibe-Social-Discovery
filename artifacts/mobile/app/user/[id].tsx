@@ -213,7 +213,7 @@ export default function UserProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
-        <Pressable style={styles.headerBack} onPress={() => router.back()}>
+        <Pressable style={styles.headerBack} onPress={() => router.canGoBack() ? router.back() : router.push("/")}>
           <Feather name="arrow-left" size={22} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>{user.name}</Text>

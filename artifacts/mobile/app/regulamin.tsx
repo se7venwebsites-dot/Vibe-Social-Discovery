@@ -12,7 +12,7 @@ export default function RegulaminScreen() {
   return (
     <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+    <Pressable style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.push("/")}>
           <Feather name="arrow-left" size={20} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.title}>Regulamin VIBE</Text>
